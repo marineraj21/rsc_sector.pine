@@ -1,5 +1,5 @@
 //@version=6
-indicator("Wave Length", shorttitle="Wave Length", overlay=true)
+indicator("Wave Length", shorttitle="Wave Len", overlay=true)
 
 // ==============================================================================
 // === Wave SMA (Script 1) ===
@@ -55,13 +55,13 @@ bbar_tgt2 = input.float(4.0, title="Target Ratio 2", group="Wave SMA")
 rng = high - low
 
 float cstop = 0
-cstop := state > prev_state ? (low - rng * bbar_stop) : state < prev_state ? (high + rng * bbar_stop) : ta.fixnan(cstop[1])
+cstop := state > prev_state ? (low - rng * bbar_stop) : state < prev_state ? (high + rng * bbar_stop) : cstop[1]
 float centry = 0
-centry := state > prev_state ? (low + rng * bbar_entry) : state < prev_state ? (high - rng * bbar_entry) : ta.fixnan(centry[1])
+centry := state > prev_state ? (low + rng * bbar_entry) : state < prev_state ? (high - rng * bbar_entry) : centry[1]
 float ctgt1 = 0
-ctgt1 := state > prev_state ? (low + rng * bbar_tgt1) : state < prev_state ? (high - rng * bbar_tgt1) : ta.fixnan(ctgt1[1])
+ctgt1 := state > prev_state ? (low + rng * bbar_tgt1) : state < prev_state ? (high - rng * bbar_tgt1) : ctgt1[1]
 float ctgt2 = 0
-ctgt2 := state > prev_state ? (low + rng * bbar_tgt2) : state < prev_state ? (high - rng * bbar_tgt2) : ta.fixnan(ctgt2[1])
+ctgt2 := state > prev_state ? (low + rng * bbar_tgt2) : state < prev_state ? (high - rng * bbar_tgt2) : ctgt2[1]
 
 float ncstop = state > prev_state ? (low - rng * bbar_stop) : state < prev_state ? (high + rng * bbar_stop) : float(na)
 float ncentry = state > prev_state ? (low + rng * bbar_entry) : state < prev_state ? (high - rng * bbar_entry) : float(na)
@@ -75,14 +75,14 @@ float ptgt2 = cont ? ctgt2 : nctgt2
 int displ = cont ? -1 : 0
 
 float colbar = 1
-colbar := bull ? 1 : bear ? 0 : ta.fixnan(colbar[1])
+colbar := bull ? 1 : bear ? 0 : nz(colbar[1], 1)
 color entrycol = colbar == 1 ? color.rgb(0,0,255) : color.rgb(255,0,0)
 color stopcol = colbar == 1 ? color.rgb(255,0,0) : color.rgb(0,0,255)
 
-plot(showbbar ? (ta.change(pstop) ? na : pstop) : na, title="Stop", color=stopcol, linewidth=2, style=plot.style_circles, offset=displ)
-plot(showbbar ? (ta.change(pentry) ? na : pentry) : na, title="Entry Signal", color=entrycol, linewidth=2, style=plot.style_linebr, offset=displ)
-plot((showbbar and tar1) ? (ta.change(ptgt1) ? na : ptgt1) : na, title="Target 1", color=color.yellow, linewidth=2, style=plot.style_cross, offset=displ)
-plot((showbbar and tar2) ? (ta.change(ptgt2) ? na : ptgt2) : na, title="Target 2", color=color.yellow, linewidth=2, style=plot.style_cross, offset=displ)
+plot(showbbar ? (ta.change(pstop) != 0 ? na : pstop) : na, title="Stop", color=stopcol, linewidth=2, style=plot.style_circles, offset=displ)
+plot(showbbar ? (ta.change(pentry) != 0 ? na : pentry) : na, title="Entry Signal", color=entrycol, linewidth=2, style=plot.style_linebr, offset=displ)
+plot((showbbar and tar1) ? (ta.change(ptgt1) != 0 ? na : ptgt1) : na, title="Target 1", color=color.yellow, linewidth=2, style=plot.style_cross, offset=displ)
+plot((showbbar and tar2) ? (ta.change(ptgt2) != 0 ? na : ptgt2) : na, title="Target 2", color=color.yellow, linewidth=2, style=plot.style_cross, offset=displ)
 
 // ==============================================================================
 // === ADX Weekly Compression Breakout v2 (Script 2) ===
