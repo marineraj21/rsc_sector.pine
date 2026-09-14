@@ -1,0 +1,127 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © FractalTrade15
+
+//@version=6
+indicator(title="Wave Length", shorttitle="Wave Length", overlay=true)
+
+// Global Toggles
+grp_toggles = "Visual Toggles"
+show_xtl_color = input.bool(true, "Show XTL Bar Colors", group = grp_toggles)
+show_dma       = input.bool(true, "Show DMA", group = grp_toggles)
+show_bbar      = input.bool(true, "Show Breakout Bar Signals", group = grp_toggles)
+show_adx       = input.bool(true, "Show ADX Signals", group = grp_toggles)
+
+//Expert Trend Locator (XTL)
+grp_xtl = "XTL Settings"
+len     = input.int(34, minval=1, title = "XTL Period", group=grp_xtl)
+hLmt    = input.float(34, title="Threshold Value", minval=10, group=grp_xtl)
+
+xtl_src = hlc3
+XTL = ta.cci(xtl_src, len)
+
+bull = XTL > hLmt
+bear = XTL < -hLmt
+neutral = (XTL <= hLmt) and (XTL >= -hLmt)
+
+upcolor = color.rgb(0, 135, 225)
+dwncolor = color.rgb(255, 0, 0)
+ntlcolor = color.rgb(255, 255, 255, 30)
+
+barcolor(show_xtl_color ? (bull ? upcolor : neutral ? ntlcolor : dwncolor) : na)
+
+//Displaced Moving Average (DMA)
+grp_dma = "DMA Settings"
+malength = input.int(8, minval=1, title="DMA Length", group=grp_dma)
+displacement = input.int(5, minval=0, title="DMA Displacement", group=grp_dma)
+
+DMA1 = ta.sma(low, malength)
+DMA2 = ta.sma(high, malength)
+
+DMA_Color = DMA1 > DMA1[1] ? color.rgb(50, 125, 255, 60) : DMA1 <= DMA1[1] ? color.rgb(250, 0, 0, 60) : color.black
+ccol = color.rgb(255, 255, 255, 90)
+d1 = plot(show_dma ? DMA1 : na, title="DMA1", color = DMA_Color, linewidth = 2, offset = displacement)
+d2 = plot(show_dma ? DMA2 : na, title="DMA2", color = DMA_Color, linewidth = 2, offset = displacement)
+fill(d1, d2, color = show_dma ? ccol : na, title = "DMA Cloud")
+
+///Breakout Bar Entry & Stop
+grp_bbar = "Breakout Bar Signals Settings"
+cont = input.bool(false, title = "Levels as Lines", group=grp_bbar)
+
+var int state = 0
+if bear
+    state := 0
+else if bull
+    state := 1
+
+prev_state = state[1]
+
+bbar_stop = input.float(0.5, title = "Stop Loss Ratio", group=grp_bbar)
+bbar_entry = input.float(1.5, title = "Entry Ratio", group=grp_bbar)
+
+tar1 = input.bool(true, title = "Show Target 1", group=grp_bbar)
+tar2 = input.bool(false, title = "Show Target 2", group=grp_bbar)
+bbar_tgt1 = input.float(3.0, title = "Target Ratio 1", group=grp_bbar)
+bbar_tgt2 = input.float(4.0, title = "Target Ratio 2", group=grp_bbar)
+
+bar_range = high - low
+
+var float cstop = na
+var float centry = na
+var float ctgt1 = na
+var float ctgt2 = na
+
+if state > prev_state
+    cstop := low - bar_range * bbar_stop
+    centry := low + bar_range * bbar_entry
+    ctgt1 := low + bar_range * bbar_tgt1
+    ctgt2 := low + bar_range * bbar_tgt2
+else if state < prev_state
+    cstop := high + bar_range * bbar_stop
+    centry := high - bar_range * bbar_entry
+    ctgt1 := high - bar_range * bbar_tgt1
+    ctgt2 := high - bar_range * bbar_tgt2
+
+ncstop = state > prev_state ? (low - bar_range * bbar_stop) : state < prev_state ? (high + bar_range * bbar_stop) : na
+ncentry = state > prev_state ? (low + bar_range * bbar_entry) : state < prev_state ? (high - bar_range * bbar_entry) : na
+nctgt1 = state > prev_state ? (low + bar_range * bbar_tgt1) : state < prev_state ? (high - bar_range * bbar_tgt1) : na
+nctgt2 = state > prev_state ? (low + bar_range * bbar_tgt2) : state < prev_state ? (high - bar_range * bbar_tgt2) : na
+
+pstop = cont ? cstop : ncstop
+pentry = cont ? centry : ncentry
+ptgt1 = cont ? ctgt1 : nctgt1
+ptgt2 = cont ? ctgt2 : nctgt2
+displ = cont ? -1 : 0
+
+var int colbar_state = 1
+if bull
+    colbar_state := 1
+else if bear
+    colbar_state := 0
+
+color entrycol = colbar_state == 1 ? color.rgb(0,0,255) : color.rgb(255,0,0)
+color stopcol = colbar_state == 1 ? color.rgb(255,0,0) : color.rgb(0,0,255)
+
+plot(show_bbar ? (nz(ta.change(pstop)) != 0 ? na : pstop) : na, title='Stop', color=stopcol, linewidth=2, style=plot.style_circles, offset= displ)
+plot(show_bbar ? (nz(ta.change(pentry)) != 0 ? na : pentry) : na, title='Entry Signal', color=entrycol, linewidth=2, style=plot.style_linebr, offset= displ)
+plot((show_bbar and tar1) ? (nz(ta.change(ptgt1)) != 0 ? na : ptgt1) : na, title='Target 1', color=color.yellow, linewidth=2, style=plot.style_cross, offset = displ)
+plot((show_bbar and tar2) ? (nz(ta.change(ptgt2)) != 0 ? na : ptgt2) : na, title='Target 2', color=color.yellow, linewidth=2, style=plot.style_cross, offset = displ)
+
+// === Script 2 Logic (Weekly ADX Breakout) ===
+grp_adx = "Weekly ADX Settings"
+adxLen = input.int(14, title="ADX/DMI Length", group=grp_adx)
+adxCompression = input.float(10.0, title="ADX Compression Level", group=grp_adx)
+
+// Function to compute ADX signal
+f_adx_weekly_signal(length, compression) =>
+    [diPlus, diMinus, adx] = ta.dmi(length, length)
+    adxWasCompressed = adx[1] < compression
+    adxTurningUp = adx > adx[1]
+    diCrossover = ta.crossover(diPlus, diMinus)
+    diSlopingUp = diPlus > diPlus[1]
+
+    adxWasCompressed and adxTurningUp and diCrossover and diSlopingUp
+
+// Use request.security for Weekly timeframe regardless of chart timeframe
+weeklySignal = request.security(syminfo.tickerid, "W", f_adx_weekly_signal(adxLen, adxCompression))
+
+plotshape(show_adx and weeklySignal, title="Bullish Signal", style=shape.triangleup, location=location.belowbar, color=color.green, size=size.small)
