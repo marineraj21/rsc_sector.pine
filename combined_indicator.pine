@@ -1,0 +1,105 @@
+//@version=6
+indicator("Wave Length", shorttitle="Wave Len", overlay=true)
+
+// ==============================================================================
+// === Wave SMA (Script 1) ===
+// ==============================================================================
+
+// Expert Trend Locator (XTL)
+len     = input.int(34, minval=1, title="XTL Period", group="Wave SMA")
+hLmt    = input.int(34, title="Threshold Value", minval=10, group="Wave SMA")
+
+xtl_src = hlc3
+XTL = ta.cci(xtl_src, len)
+
+bull = XTL > hLmt
+bear = XTL < -hLmt
+neutral = (XTL <= hLmt) and (XTL >= -hLmt)
+
+upcolor = color.rgb(0, 135, 225)
+dwncolor = color.rgb(255, 0, 0)
+ntlcolor = color.rgb(255, 255, 255, 30)
+
+barcolor(bull ? upcolor : neutral ? ntlcolor : dwncolor)
+
+// Displaced Moving Average (DMA)
+showdma = input.bool(true, title="Show DMA?", group="Wave SMA")
+malength = input.int(8, minval=1, title="DMA Length", group="Wave SMA")
+displacement = input.int(5, minval=0, title="DMA Displacement", group="Wave SMA")
+
+DMA1 = ta.sma(low, malength)
+DMA2 = ta.sma(high, malength)
+
+DMA_Color = DMA1 > DMA1[1] ? color.rgb(50, 125, 255, 60) : DMA1 <= DMA1[1] ? color.rgb(250, 0, 0, 60) : color.black
+ccol = color.rgb(255, 255, 255, 90)
+d1 = plot(showdma ? DMA1 : na, title="DMA1", color=DMA_Color, linewidth=2, offset=displacement)
+d2 = plot(showdma ? DMA2 : na, title="DMA2", color=DMA_Color, linewidth=2, offset=displacement)
+fill(d1, d2, color=ccol, title="DMA Cloud")
+
+// Breakout Bar Entry & Stop
+showbbar = input.bool(true, title="Show Breakout Bar Signals", group="Wave SMA")
+cont = input.bool(false, title="Levels as Lines", group="Wave SMA")
+
+float state = 0
+state := bear ? 0 : bull ? 1 : neutral ? state[1] : na
+float prev_state = state[1]
+
+bbar_stop = input.float(0.5, title="Stop Loss Ratio", group="Wave SMA")
+bbar_entry = input.float(1.5, title="Entry Ratio", group="Wave SMA")
+
+tar1 = input.bool(true, title="Show Target 1", group="Wave SMA")
+tar2 = input.bool(false, title="Show Target 2", group="Wave SMA")
+bbar_tgt1 = input.float(3.0, title="Target Ratio 1", group="Wave SMA")
+bbar_tgt2 = input.float(4.0, title="Target Ratio 2", group="Wave SMA")
+
+rng = high - low
+
+float cstop = 0
+cstop := state > prev_state ? (low - rng * bbar_stop) : state < prev_state ? (high + rng * bbar_stop) : cstop[1]
+float centry = 0
+centry := state > prev_state ? (low + rng * bbar_entry) : state < prev_state ? (high - rng * bbar_entry) : centry[1]
+float ctgt1 = 0
+ctgt1 := state > prev_state ? (low + rng * bbar_tgt1) : state < prev_state ? (high - rng * bbar_tgt1) : ctgt1[1]
+float ctgt2 = 0
+ctgt2 := state > prev_state ? (low + rng * bbar_tgt2) : state < prev_state ? (high - rng * bbar_tgt2) : ctgt2[1]
+
+float ncstop = state > prev_state ? (low - rng * bbar_stop) : state < prev_state ? (high + rng * bbar_stop) : float(na)
+float ncentry = state > prev_state ? (low + rng * bbar_entry) : state < prev_state ? (high - rng * bbar_entry) : float(na)
+float nctgt1 = state > prev_state ? (low + rng * bbar_tgt1) : state < prev_state ? (high - rng * bbar_tgt1) : float(na)
+float nctgt2 = state > prev_state ? (low + rng * bbar_tgt2) : state < prev_state ? (high - rng * bbar_tgt2) : float(na)
+
+float pstop = cont ? cstop : ncstop
+float pentry = cont ? centry : ncentry
+float ptgt1 = cont ? ctgt1 : nctgt1
+float ptgt2 = cont ? ctgt2 : nctgt2
+int displ = cont ? -1 : 0
+
+float colbar = 1
+colbar := bull ? 1 : bear ? 0 : nz(colbar[1], 1)
+color entrycol = colbar == 1 ? color.rgb(0,0,255) : color.rgb(255,0,0)
+color stopcol = colbar == 1 ? color.rgb(255,0,0) : color.rgb(0,0,255)
+
+plot(showbbar ? (ta.change(pstop) != 0 ? na : pstop) : na, title="Stop", color=stopcol, linewidth=2, style=plot.style_circles, offset=displ)
+plot(showbbar ? (ta.change(pentry) != 0 ? na : pentry) : na, title="Entry Signal", color=entrycol, linewidth=2, style=plot.style_linebr, offset=displ)
+plot((showbbar and tar1) ? (ta.change(ptgt1) != 0 ? na : ptgt1) : na, title="Target 1", color=color.yellow, linewidth=2, style=plot.style_cross, offset=displ)
+plot((showbbar and tar2) ? (ta.change(ptgt2) != 0 ? na : ptgt2) : na, title="Target 2", color=color.yellow, linewidth=2, style=plot.style_cross, offset=displ)
+
+// ==============================================================================
+// === ADX Weekly Compression Breakout v2 (Script 2) ===
+// ==============================================================================
+
+adxLen = input.int(14, title="ADX/DMI Length", group="ADX Breakout")
+adxCompression = input.float(10.0, title="ADX Compression Level", group="ADX Breakout")
+
+[diPlus, diMinus, adx] = ta.dmi(adxLen, adxLen)
+
+bullishSignal = if timeframe.isweekly
+    adxWasCompressed = adx[1] < adxCompression
+    adxTurningUp = adx > adx[1]
+    diCrossover = ta.crossover(diPlus, diMinus)
+    diSlopingUp = diPlus > diPlus[1]
+    adxWasCompressed and adxTurningUp and diCrossover and diSlopingUp
+else
+    false
+
+plotshape(bullishSignal, title="Bullish Signal", style=shape.triangleup, location=location.belowbar, color=color.green, size=size.small)
