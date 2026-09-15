@@ -1,0 +1,392 @@
+//@version=6
+indicator(title='RSC-SECTOR', shorttitle='RSC', overlay=false, precision=2)
+// Enhanced version of 'Relative Strength' indicator of BharatTrader Sir...
+// Default values for some of the parameters are based on discussion by Subhadip Nandy Sir in Trader's Talk with Mr. Rohit Katwal...
+// Allows to display Anchored RS based on selection of specific date...
+
+// Get inputs...
+ttBType = 'For NSE Sector, respective sector of NSE F&O script will be considered automatically'
+defaultBType = input.string(defval='NIFTY50', title='Benchmark Type', group='Select Benchmark', options=['NIFTY50', 'NSE Sector', 'Custom Benchmark'], tooltip=ttBType)
+ttBSymbol = 'To be used only when Benchmark Type is Custom Benchmark'
+defaultBID = input.symbol('NSE:NIFTY', title='Comparative Symbol', group='Select Benchmark', tooltip=ttBSymbol)
+
+source = input.source(title='Source', defval=close, group='Params')
+ttLenRS = 'If Anchored RS is selected, this input will be ignored'
+len = input.int(22, minval=1, title='Period-RS', tooltip=ttLenRS, group='Params')
+lenMA = input.int(11, minval=1, title='Period-MA', group='Params')
+zrTrendLookBack = input.int(5, minval=0, title='Lookback - Zero Line Trend', group='Params')
+divLookBack = input.int(2, minval=0, title='Lookback - Divergence Dots', group='Params')
+
+flagARS = input.bool(defval=false, title='Show Anchored RS (ARS)', group='Anchored RS')
+historyDate = input.time(timestamp('2024-09-26 00:00'), 'Reference Date', group='Anchored RS')
+
+flagMA = input.bool(defval=true, title='Display MA Line', group='Flags')
+flagRSColor = input.bool(defval=true, title='Toggle RS Color on MA Crossovers', group='Flags')
+flagZRTrend = input.bool(defval=true, title='Display Zero Line Trend', group='Flags')
+flagDivDots = input.bool(defval=true, title='Display Divergence Dots', group='Flags')
+flagFill = input.bool(defval=true, title='Display Filled Area', group='Flags')
+flagSectorName = input.bool(defval=true, title='Display Sector Name', group='Flags')
+
+colorZeroLine = input.color(color.new(color.gray, 0), 'Zero Line', group='COLORS')
+colorRSPos = input.color(color.new(color.green, 0), 'RS Line - UP', group='COLORS')
+colorRSNeg = input.color(color.new(color.red, 0), 'RS Line - DOWN', group='COLORS')
+colorRSZero = input.color(color.new(color.purple, 0), 'RS Line', group='COLORS')
+colorMALine = input.color(color.new(color.orange, 0), 'MA Line', group='COLORS')
+colorDivPos = input.color(color.new(color.blue, 0), 'Divergence Dots - Positive', group='COLORS')
+colorDivNeg = input.color(color.new(color.fuchsia, 0), 'Divergence Dots - Negative', group='COLORS')
+colorText = input.color(color.new(color.blue, 0), 'Sector Name - F&O Script', group='COLORS')
+
+// Get Sector... (all current NSE F&O underlyings from 14-Aug-2026 list)
+var sectorMap = map.new<string, string>()
+
+if bar_index == 0
+    // --- NSE:CNXAUTO (17) ---
+    sectorMap.put('NSE:ASHOKLEY', 'NSE:CNXAUTO')
+    sectorMap.put('NSE:BAJAJ-AUTO', 'NSE:CNXAUTO')
+    sectorMap.put('NSE:BAJAJ_AUTO', 'NSE:CNXAUTO')
+    sectorMap.put('NSE:BHARATFORG', 'NSE:CNXAUTO')
+    sectorMap.put('NSE:BOSCHLTD', 'NSE:CNXAUTO')
+    sectorMap.put('NSE:EICHERMOT', 'NSE:CNXAUTO')
+    sectorMap.put('NSE:FORCEMOT', 'NSE:CNXAUTO')
+    sectorMap.put('NSE:HEROMOTOCO', 'NSE:CNXAUTO')
+    sectorMap.put('NSE:HYUNDAI', 'NSE:CNXAUTO')
+    sectorMap.put('NSE:M&M', 'NSE:CNXAUTO')
+    sectorMap.put('NSE:MARUTI', 'NSE:CNXAUTO')
+    sectorMap.put('NSE:MOTHERSON', 'NSE:CNXAUTO')
+    sectorMap.put('NSE:M_M', 'NSE:CNXAUTO')
+    sectorMap.put('NSE:SONACOMS', 'NSE:CNXAUTO')
+    sectorMap.put('NSE:TMPV', 'NSE:CNXAUTO')
+    sectorMap.put('NSE:TVSMOTOR', 'NSE:CNXAUTO')
+    sectorMap.put('NSE:UNOMINDA', 'NSE:CNXAUTO')
+    // --- NSE:BANKNIFTY (18) ---
+    sectorMap.put('NSE:AUBANK', 'NSE:BANKNIFTY')
+    sectorMap.put('NSE:AXISBANK', 'NSE:BANKNIFTY')
+    sectorMap.put('NSE:BANDHANBNK', 'NSE:BANKNIFTY')
+    sectorMap.put('NSE:BANKBARODA', 'NSE:BANKNIFTY')
+    sectorMap.put('NSE:BANKINDIA', 'NSE:BANKNIFTY')
+    sectorMap.put('NSE:CANBK', 'NSE:BANKNIFTY')
+    sectorMap.put('NSE:FEDERALBNK', 'NSE:BANKNIFTY')
+    sectorMap.put('NSE:HDFCBANK', 'NSE:BANKNIFTY')
+    sectorMap.put('NSE:ICICIBANK', 'NSE:BANKNIFTY')
+    sectorMap.put('NSE:IDFCFIRSTB', 'NSE:BANKNIFTY')
+    sectorMap.put('NSE:INDIANB', 'NSE:BANKNIFTY')
+    sectorMap.put('NSE:INDUSINDBK', 'NSE:BANKNIFTY')
+    sectorMap.put('NSE:KOTAKBANK', 'NSE:BANKNIFTY')
+    sectorMap.put('NSE:PNB', 'NSE:BANKNIFTY')
+    sectorMap.put('NSE:RBLBANK', 'NSE:BANKNIFTY')
+    sectorMap.put('NSE:SBIN', 'NSE:BANKNIFTY')
+    sectorMap.put('NSE:UNIONBANK', 'NSE:BANKNIFTY')
+    sectorMap.put('NSE:YESBANK', 'NSE:BANKNIFTY')
+    // --- NSE:NIFTY_CONSR_DURBL (11) ---
+    sectorMap.put('NSE:AMBER', 'NSE:NIFTY_CONSR_DURBL')
+    sectorMap.put('NSE:ASTRAL', 'NSE:NIFTY_CONSR_DURBL')
+    sectorMap.put('NSE:BLUESTARCO', 'NSE:NIFTY_CONSR_DURBL')
+    sectorMap.put('NSE:CROMPTON', 'NSE:NIFTY_CONSR_DURBL')
+    sectorMap.put('NSE:DIXON', 'NSE:NIFTY_CONSR_DURBL')
+    sectorMap.put('NSE:HAVELLS', 'NSE:NIFTY_CONSR_DURBL')
+    sectorMap.put('NSE:KALYANKJIL', 'NSE:NIFTY_CONSR_DURBL')
+    sectorMap.put('NSE:PGEL', 'NSE:NIFTY_CONSR_DURBL')
+    sectorMap.put('NSE:SUPREMEIND', 'NSE:NIFTY_CONSR_DURBL')
+    sectorMap.put('NSE:TITAN', 'NSE:NIFTY_CONSR_DURBL')
+    sectorMap.put('NSE:VOLTAS', 'NSE:NIFTY_CONSR_DURBL')
+    // --- NSE:CNXCONSUMPTION ---
+    sectorMap.put('NSE:ASIANPAINT', 'NSE:CNXCONSUMPTION')
+    sectorMap.put('NSE:DMART', 'NSE:CNXCONSUMPTION')
+    sectorMap.put('NSE:INDHOTEL', 'NSE:CNXCONSUMPTION')
+    sectorMap.put('NSE:JUBLFOOD', 'NSE:CNXCONSUMPTION')
+    sectorMap.put('NSE:PAGEIND', 'NSE:CNXCONSUMPTION')
+    sectorMap.put('NSE:TRENT', 'NSE:CNXCONSUMPTION')
+    sectorMap.put('NSE:VMM', 'NSE:CNXCONSUMPTION')
+    // --- NSE:CNXENERGY ---
+    sectorMap.put('NSE:ADANIENSOL', 'NSE:CNXENERGY')
+    sectorMap.put('NSE:ADANIGREEN', 'NSE:CNXENERGY')
+    sectorMap.put('NSE:ADANIPOWER', 'NSE:CNXENERGY')
+    sectorMap.put('NSE:BPCL', 'NSE:CNXENERGY')
+    sectorMap.put('NSE:COALINDIA', 'NSE:CNXENERGY')
+    sectorMap.put('NSE:HINDPETRO', 'NSE:CNXENERGY')
+    sectorMap.put('NSE:IEX', 'NSE:CNXENERGY')
+    sectorMap.put('NSE:INOXWIND', 'NSE:CNXENERGY')
+    sectorMap.put('NSE:IOC', 'NSE:CNXENERGY')
+    sectorMap.put('NSE:JSWENERGY', 'NSE:CNXENERGY')
+    sectorMap.put('NSE:NHPC', 'NSE:CNXENERGY')
+    sectorMap.put('NSE:NTPC', 'NSE:CNXENERGY')
+    sectorMap.put('NSE:OIL', 'NSE:CNXENERGY')
+    sectorMap.put('NSE:ONGC', 'NSE:CNXENERGY')
+    sectorMap.put('NSE:POWERGRID', 'NSE:CNXENERGY')
+    sectorMap.put('NSE:PREMIERENE', 'NSE:CNXENERGY')
+    sectorMap.put('NSE:RELIANCE', 'NSE:CNXENERGY')
+    sectorMap.put('NSE:SUZLON', 'NSE:CNXENERGY')
+    sectorMap.put('NSE:TATAPOWER', 'NSE:CNXENERGY')
+    sectorMap.put('NSE:WAAREEENER', 'NSE:CNXENERGY')
+    // --- NSE:CNXFINANCE ---
+    sectorMap.put('NSE:360ONE', 'NSE:CNXFINANCE')
+    sectorMap.put('NSE:ABCAPITAL', 'NSE:CNXFINANCE')
+    sectorMap.put('NSE:ANGELONE', 'NSE:CNXFINANCE')
+    sectorMap.put('NSE:BAJAJFINSV', 'NSE:CNXFINANCE')
+    sectorMap.put('NSE:BAJAJHLDNG', 'NSE:CNXFINANCE')
+    sectorMap.put('NSE:BAJFINANCE', 'NSE:CNXFINANCE')
+    sectorMap.put('NSE:BSE', 'NSE:CNXFINANCE')
+    sectorMap.put('NSE:CAMS', 'NSE:CNXFINANCE')
+    sectorMap.put('NSE:CDSL', 'NSE:CNXFINANCE')
+    sectorMap.put('NSE:CHOLAFIN', 'NSE:CNXFINANCE')
+    sectorMap.put('NSE:HDFCAMC', 'NSE:CNXFINANCE')
+    sectorMap.put('NSE:HDFCLIFE', 'NSE:CNXFINANCE')
+    sectorMap.put('NSE:ICICIGI', 'NSE:CNXFINANCE')
+    sectorMap.put('NSE:ICICIPRULI', 'NSE:CNXFINANCE')
+    sectorMap.put('NSE:IREDA', 'NSE:CNXFINANCE')
+    sectorMap.put('NSE:IRFC', 'NSE:CNXFINANCE')
+    sectorMap.put('NSE:JIOFIN', 'NSE:CNXFINANCE')
+    sectorMap.put('NSE:KFINTECH', 'NSE:CNXFINANCE')
+    sectorMap.put('NSE:LICHSGFIN', 'NSE:CNXFINANCE')
+    sectorMap.put('NSE:LICI', 'NSE:CNXFINANCE')
+    sectorMap.put('NSE:LTF', 'NSE:CNXFINANCE')
+    sectorMap.put('NSE:MANAPPURAM', 'NSE:CNXFINANCE')
+    sectorMap.put('NSE:MCX', 'NSE:CNXFINANCE')
+    sectorMap.put('NSE:MFSL', 'NSE:CNXFINANCE')
+    sectorMap.put('NSE:MOTILALOFS', 'NSE:CNXFINANCE')
+    sectorMap.put('NSE:MUTHOOTFIN', 'NSE:CNXFINANCE')
+    sectorMap.put('NSE:NAM-INDIA', 'NSE:CNXFINANCE')
+    sectorMap.put('NSE:NAM_INDIA', 'NSE:CNXFINANCE')
+    sectorMap.put('NSE:PFC', 'NSE:CNXFINANCE')
+    sectorMap.put('NSE:PNBHOUSING', 'NSE:CNXFINANCE')
+    sectorMap.put('NSE:RECLTD', 'NSE:CNXFINANCE')
+    sectorMap.put('NSE:SBICARD', 'NSE:CNXFINANCE')
+    sectorMap.put('NSE:SBILIFE', 'NSE:CNXFINANCE')
+    sectorMap.put('NSE:SHRIRAMFIN', 'NSE:CNXFINANCE')
+    // --- NSE:CNXFMCG ---
+    sectorMap.put('NSE:BRITANNIA', 'NSE:CNXFMCG')
+    sectorMap.put('NSE:COLPAL', 'NSE:CNXFMCG')
+    sectorMap.put('NSE:DABUR', 'NSE:CNXFMCG')
+    sectorMap.put('NSE:GODFRYPHLP', 'NSE:CNXFMCG')
+    sectorMap.put('NSE:GODREJCP', 'NSE:CNXFMCG')
+    sectorMap.put('NSE:HINDUNILVR', 'NSE:CNXFMCG')
+    sectorMap.put('NSE:ITC', 'NSE:CNXFMCG')
+    sectorMap.put('NSE:MARICO', 'NSE:CNXFMCG')
+    sectorMap.put('NSE:NESTLEIND', 'NSE:CNXFMCG')
+    sectorMap.put('NSE:PATANJALI', 'NSE:CNXFMCG')
+    sectorMap.put('NSE:RADICO', 'NSE:CNXFMCG')
+    sectorMap.put('NSE:TATACONSUM', 'NSE:CNXFMCG')
+    sectorMap.put('NSE:UNITDSPR', 'NSE:CNXFMCG')
+    sectorMap.put('NSE:VBL', 'NSE:CNXFMCG')
+    // --- NSE:NIFTY_HEALTHCARE ---
+    sectorMap.put('NSE:APOLLOHOSP', 'NSE:NIFTY_HEALTHCARE')
+    sectorMap.put('NSE:FORTIS', 'NSE:NIFTY_HEALTHCARE')
+    sectorMap.put('NSE:MAXHEALTH', 'NSE:NIFTY_HEALTHCARE')
+    // --- NSE:CNXINFRA ---
+    sectorMap.put('NSE:ABB', 'NSE:CNXINFRA')
+    sectorMap.put('NSE:ADANIPORTS', 'NSE:CNXINFRA')
+    sectorMap.put('NSE:AMBUJACEM', 'NSE:CNXINFRA')
+    sectorMap.put('NSE:BDL', 'NSE:CNXINFRA')
+    sectorMap.put('NSE:BEL', 'NSE:CNXINFRA')
+    sectorMap.put('NSE:BHEL', 'NSE:CNXINFRA')
+    sectorMap.put('NSE:CGPOWER', 'NSE:CNXINFRA')
+    sectorMap.put('NSE:COCHINSHIP', 'NSE:CNXINFRA')
+    sectorMap.put('NSE:CONCOR', 'NSE:CNXINFRA')
+    sectorMap.put('NSE:CUMMINSIND', 'NSE:CNXINFRA')
+    sectorMap.put('NSE:DALBHARAT', 'NSE:CNXINFRA')
+    sectorMap.put('NSE:DELHIVERY', 'NSE:CNXINFRA')
+    sectorMap.put('NSE:GMRAIRPORT', 'NSE:CNXINFRA')
+    sectorMap.put('NSE:GRASIM', 'NSE:CNXINFRA')
+    sectorMap.put('NSE:GVT&D', 'NSE:CNXINFRA')
+    sectorMap.put('NSE:GVT_D', 'NSE:CNXINFRA')
+    sectorMap.put('NSE:HAL', 'NSE:CNXINFRA')
+    sectorMap.put('NSE:INDIGO', 'NSE:CNXINFRA')
+    sectorMap.put('NSE:KEI', 'NSE:CNXINFRA')
+    sectorMap.put('NSE:LT', 'NSE:CNXINFRA')
+    sectorMap.put('NSE:MAZDOCK', 'NSE:CNXINFRA')
+    sectorMap.put('NSE:POLYCAB', 'NSE:CNXINFRA')
+    sectorMap.put('NSE:POWERINDIA', 'NSE:CNXINFRA')
+    sectorMap.put('NSE:RVNL', 'NSE:CNXINFRA')
+    sectorMap.put('NSE:SHREECEM', 'NSE:CNXINFRA')
+    sectorMap.put('NSE:SIEMENS', 'NSE:CNXINFRA')
+    sectorMap.put('NSE:ULTRACEMCO', 'NSE:CNXINFRA')
+    // --- NSE:CNXIT ---
+    sectorMap.put('NSE:COFORGE', 'NSE:CNXIT')
+    sectorMap.put('NSE:HCLTECH', 'NSE:CNXIT')
+    sectorMap.put('NSE:INFY', 'NSE:CNXIT')
+    sectorMap.put('NSE:KAYNES', 'NSE:CNXIT')
+    sectorMap.put('NSE:KPITTECH', 'NSE:CNXIT')
+    sectorMap.put('NSE:LTM', 'NSE:CNXIT')
+    sectorMap.put('NSE:MPHASIS', 'NSE:CNXIT')
+    sectorMap.put('NSE:OFSS', 'NSE:CNXIT')
+    sectorMap.put('NSE:PERSISTENT', 'NSE:CNXIT')
+    sectorMap.put('NSE:POLICYBZR', 'NSE:CNXIT')
+    sectorMap.put('NSE:TATAELXSI', 'NSE:CNXIT')
+    sectorMap.put('NSE:TCS', 'NSE:CNXIT')
+    sectorMap.put('NSE:TECHM', 'NSE:CNXIT')
+    sectorMap.put('NSE:WIPRO', 'NSE:CNXIT')
+    // --- NSE:CNXMETAL ---
+    sectorMap.put('NSE:ADANIENT', 'NSE:CNXMETAL')
+    sectorMap.put('NSE:APLAPOLLO', 'NSE:CNXMETAL')
+    sectorMap.put('NSE:HINDALCO', 'NSE:CNXMETAL')
+    sectorMap.put('NSE:HINDZINC', 'NSE:CNXMETAL')
+    sectorMap.put('NSE:JINDALSTEL', 'NSE:CNXMETAL')
+    sectorMap.put('NSE:JSWSTEEL', 'NSE:CNXMETAL')
+    sectorMap.put('NSE:NATIONALUM', 'NSE:CNXMETAL')
+    sectorMap.put('NSE:NMDC', 'NSE:CNXMETAL')
+    sectorMap.put('NSE:SAIL', 'NSE:CNXMETAL')
+    sectorMap.put('NSE:TATASTEEL', 'NSE:CNXMETAL')
+    sectorMap.put('NSE:TIINDIA', 'NSE:CNXMETAL')
+    sectorMap.put('NSE:VEDL', 'NSE:CNXMETAL')
+    // --- NSE:NIFTY_OIL_AND_GAS ---
+    sectorMap.put('NSE:GAIL', 'NSE:NIFTY_OIL_AND_GAS')
+    sectorMap.put('NSE:PETRONET', 'NSE:NIFTY_OIL_AND_GAS')
+    // --- NSE:CNXPHARMA ---
+    sectorMap.put('NSE:ALKEM', 'NSE:CNXPHARMA')
+    sectorMap.put('NSE:AUROPHARMA', 'NSE:CNXPHARMA')
+    sectorMap.put('NSE:BIOCON', 'NSE:CNXPHARMA')
+    sectorMap.put('NSE:CIPLA', 'NSE:CNXPHARMA')
+    sectorMap.put('NSE:DIVISLAB', 'NSE:CNXPHARMA')
+    sectorMap.put('NSE:DRREDDY', 'NSE:CNXPHARMA')
+    sectorMap.put('NSE:GLENMARK', 'NSE:CNXPHARMA')
+    sectorMap.put('NSE:LAURUSLABS', 'NSE:CNXPHARMA')
+    sectorMap.put('NSE:LUPIN', 'NSE:CNXPHARMA')
+    sectorMap.put('NSE:MANKIND', 'NSE:CNXPHARMA')
+    sectorMap.put('NSE:SUNPHARMA', 'NSE:CNXPHARMA')
+    sectorMap.put('NSE:TORNTPHARM', 'NSE:CNXPHARMA')
+    sectorMap.put('NSE:ZYDUSLIFE', 'NSE:CNXPHARMA')
+    // --- NSE:NIFTY_CHEMICALS ---
+    sectorMap.put('NSE:PIDILITIND', 'NSE:NIFTY_CHEMICALS')
+    sectorMap.put('NSE:PIIND', 'NSE:NIFTY_CHEMICALS')
+    sectorMap.put('NSE:SOLARINDS', 'NSE:NIFTY_CHEMICALS')
+    sectorMap.put('NSE:SRF', 'NSE:NIFTY_CHEMICALS')
+    sectorMap.put('NSE:UPL', 'NSE:NIFTY_CHEMICALS')
+    // --- NSE:CNXREALTY ---
+    sectorMap.put('NSE:DLF', 'NSE:CNXREALTY')
+    sectorMap.put('NSE:GODREJPROP', 'NSE:CNXREALTY')
+    sectorMap.put('NSE:LODHA', 'NSE:CNXREALTY')
+    sectorMap.put('NSE:NBCC', 'NSE:CNXREALTY')
+    sectorMap.put('NSE:OBEROIRLTY', 'NSE:CNXREALTY')
+    sectorMap.put('NSE:PHOENIXLTD', 'NSE:CNXREALTY')
+    sectorMap.put('NSE:PRESTIGE', 'NSE:CNXREALTY')
+    // --- NSE:CNXSERVICE ---
+    sectorMap.put('NSE:BHARTIARTL', 'NSE:CNXSERVICE')
+    sectorMap.put('NSE:ETERNAL', 'NSE:CNXSERVICE')
+    sectorMap.put('NSE:IDEA', 'NSE:CNXSERVICE')
+    sectorMap.put('NSE:INDUSTOWER', 'NSE:CNXSERVICE')
+    sectorMap.put('NSE:NAUKRI', 'NSE:CNXSERVICE')
+    sectorMap.put('NSE:NYKAA', 'NSE:CNXSERVICE')
+    sectorMap.put('NSE:PAYTM', 'NSE:CNXSERVICE')
+    sectorMap.put('NSE:SWIGGY', 'NSE:CNXSERVICE')
+
+// Resolve sector with TV ticker variants (M&M/M_M, BAJAJ-AUTO/BAJAJ_AUTO, etc.)
+string compID = sectorMap.get(syminfo.tickerid)
+if na(compID)
+    compID := sectorMap.get(str.replace_all(syminfo.tickerid, '_', '-'))
+if na(compID)
+    compID := sectorMap.get(str.replace_all(syminfo.tickerid, '-', '_'))
+if na(compID)
+    compID := sectorMap.get(str.replace_all(syminfo.tickerid, '&', '_'))
+if na(compID)
+    compID := 'NSE:CNX500'
+
+string benchmark = switch defaultBType
+    'NIFTY50' => 'NSE:NIFTY'
+    'Custom Benchmark' => defaultBID
+    => compID
+
+securityPrice = source
+comparativePrice = request.security(benchmark, timeframe.period, source, barmerge.gaps_off, barmerge.lookahead_off, ignore_invalid_symbol=true)
+
+// Anchored RS Logic Fix
+var float anchorStockPrice = na
+var float anchorBenchPrice = na
+
+bool isAnchorBar = time >= historyDate and time[1] < historyDate
+
+if flagARS
+    if isAnchorBar
+        anchorStockPrice := securityPrice
+        anchorBenchPrice := comparativePrice
+else
+    anchorStockPrice := securityPrice[len]
+    anchorBenchPrice := comparativePrice[len]
+
+float ratioStock = securityPrice / anchorStockPrice
+float ratioBench = comparativePrice / anchorBenchPrice
+
+float RS = ratioBench == 0 or na(ratioBench) or na(ratioStock) ? na : (ratioStock / ratioBench - 1.0) * 100.0
+float MA = ta.sma(RS, lenMA)
+
+// Render RS...
+color colorRS = flagRSColor ? (RS >= MA ? colorRSPos : colorRSNeg) : colorRSZero
+plotRS = plot(RS, title='RS', linewidth=2, color=colorRS)
+
+// Render MA...
+plotMA = plot(flagMA ? MA : na, title='MA', linewidth=2, color=colorMALine, display=display.all - display.status_line)
+
+// Render Zero Line...
+float angleRS = zrTrendLookBack == 0 or na(RS) ? 0.0 : math.atan((RS - RS[zrTrendLookBack]) / zrTrendLookBack)
+color colorZR = flagZRTrend ? (angleRS > 0 ? colorRSPos : angleRS < 0 ? colorRSNeg : colorZeroLine) : colorZeroLine
+plotZR = plot(0, title='Zero Line', linewidth=1, color=colorZR, display=display.all - display.status_line)
+
+// Divergence Dots...
+bool rsRising = ta.rising(RS, divLookBack)
+bool priceFalling = ta.falling(securityPrice, divLookBack)
+bool rsFalling = ta.falling(RS, divLookBack)
+bool priceRising = ta.rising(securityPrice, divLookBack)
+color colorDiv = flagDivDots ? ((rsRising and priceFalling) ? colorDivPos : (rsFalling and priceRising) ? colorDivNeg : na) : na
+plot(flagDivDots ? RS : na, 'Divergence Dots', color=colorDiv, linewidth=3, style=plot.style_circles, display=display.all - display.status_line)
+
+// Fill Area...
+int xTPPos = RS >= MA ? 70 : 85
+int xTPNeg = RS < MA ? 70 : 85
+color colorFill = RS >= 0 ? color.new(colorRSPos, xTPPos) : color.new(colorRSNeg, xTPNeg)
+fill(plotRS, plotZR, color=flagFill ? colorFill : na)
+
+var sectorTable = table.new(position=position.bottom_center, columns=1, rows=1, border_width=1)
+if barstate.islast and flagSectorName
+    table.cell(table_id=sectorTable, column=0, row=0, text=str.tostring(compID), text_size=size.small, text_color=colorText)
+
+// Divergence...
+flagDivRegular = input.bool(defval=true, title='Display Regular Divergence Lines', group='Divergence')
+flagDivHidden = input.bool(defval=false, title='Display Hidden Divergence Lines', group='Divergence')
+lbL = input.int(defval=5, minval=1, title='Pivot Lookback Left', group='Divergence', display=display.none)
+lbR = input.int(defval=5, minval=1, title='Pivot Lookback Right', group='Divergence', display=display.none)
+rangeLower = input.int(defval=5, minval=1, title='Minimum Lookback Range', group='Divergence', display=display.none)
+rangeUpper = input.int(defval=60, minval=1, title='Maximum Lookback Range', group='Divergence', display=display.none)
+
+regularBullColor = color.new(color.green, 30)
+hiddenBullColor = color.new(color.green, 60)
+regularBearColor = color.new(color.red, 30)
+hiddenBearColor = color.new(color.red, 60)
+noneColor = color.new(color.white, 100)
+
+isInRange(bool cond) =>
+    bars = ta.barssince(cond)
+    rangeLower <= bars and bars <= rangeUpper
+
+float oscLBR = RS[lbR]
+
+float pivotLow = ta.pivotlow(RS, lbL, lbR)
+float pivotHigh = ta.pivothigh(RS, lbL, lbR)
+bool plFound = not na(pivotLow)
+bool phFound = not na(pivotHigh)
+
+float oscLBRPlVal = ta.valuewhen(plFound, oscLBR, 1)
+float oscLBRPhVal = ta.valuewhen(phFound, oscLBR, 1)
+float lowLbRPlVal = ta.valuewhen(plFound, low[lbR], 1)
+float highLbRPhVal = ta.valuewhen(phFound, high[lbR], 1)
+
+bool plRange = isInRange(plFound[1])
+bool phRange = isInRange(phFound[1])
+
+bool oscHL = oscLBR > oscLBRPlVal and plRange
+bool oscLL = oscLBR < oscLBRPlVal and plRange
+bool oscLH = oscLBR < oscLBRPhVal and phRange
+bool oscHH = oscLBR > oscLBRPhVal and phRange
+
+bool priceLL = low[lbR] < lowLbRPlVal
+bool priceHL = low[lbR] > lowLbRPlVal
+bool priceHH = high[lbR] > highLbRPhVal
+bool priceLH = high[lbR] < highLbRPhVal
+
+bool regularBullDiv = flagDivRegular and priceLL and oscHL and plFound
+bool hiddenBullDiv = flagDivHidden and priceHL and oscLL and plFound
+bool regularBearDiv = flagDivRegular and priceHH and oscLH and phFound
+bool hiddenBearDiv = flagDivHidden and priceLH and oscHH and phFound
+
+plot(plFound and (flagDivRegular or flagDivHidden) ? oscLBR : na, offset=-lbR, title='Regular Bullish', linewidth=1, color=regularBullDiv ? regularBullColor : noneColor, display=display.all - display.status_line)
+plot(phFound and (flagDivRegular or flagDivHidden) ? oscLBR : na, offset=-lbR, title='Regular Bearish', linewidth=1, color=regularBearDiv ? regularBearColor : noneColor, display=display.all - display.status_line)
+plot(plFound and (flagDivRegular or flagDivHidden) ? oscLBR : na, offset=-lbR, title='Hidden Bullish', linewidth=1, color=hiddenBullDiv ? hiddenBullColor : noneColor, display=display.all - display.status_line)
+plot(phFound and (flagDivRegular or flagDivHidden) ? oscLBR : na, offset=-lbR, title='Hidden Bearish', linewidth=1, color=hiddenBearDiv ? hiddenBearColor : noneColor, display=display.all - display.status_line)
