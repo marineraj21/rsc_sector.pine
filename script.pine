@@ -128,11 +128,12 @@ draw_zone(bool isRes, float top, float bot, int x_start, string tf_label, array<
             label.delete(oldest.l)
 
 update_zones(array<Zone> arr) =>
-    for i = 0 to array.size(arr) - 1
-        Zone z = array.get(arr, i)
-        box.set_right(z.b, bar_index)
-        if show_labels
-            label.set_x(z.l, bar_index + 2)
+    if array.size(arr) > 0
+        for i = 0 to array.size(arr) - 1
+            Zone z = array.get(arr, i)
+            box.set_right(z.b, bar_index)
+            if show_labels
+                label.set_x(z.l, bar_index + 2)
 
 // Execute Drawing TF1
 if res1
