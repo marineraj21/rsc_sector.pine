@@ -2,9 +2,9 @@
 // © FractalTrade15
 
 //@version=6
-indicator(title="Wave Length", shorttitle="Wave Length", overlay=true)
+indicator(title="Wave Length", shorttitle="Wave Length", overlay=true, max_lines_count=500)
 
-//Expert Trend Locator (XTL)
+// --- XTL & Candle Color Logic ---
 len     = input.int(34, minval=1, title = "XTL Period")
 hLmt    = input.float(34, title="Threshold Value", minval=10)
 
@@ -15,11 +15,75 @@ bull = XTL > hLmt
 bear = XTL < -hLmt
 neutral = (XTL <= hLmt) and (XTL >= -hLmt)
 
+// 15-Minute Volume Breakout (replaces XTL neutral for white candles)
+var float initial_15m_vol = na
+
+// Calculate time within 09:15 to 09:30 for Asia/Kolkata
+is_first_15m = timeframe.isintraday and hour(time, "Asia/Kolkata") == 9 and minute(time, "Asia/Kolkata") >= 15 and minute(time, "Asia/Kolkata") < 30
+
+// Reset at the start of a new day
+if ta.change(time("D"))
+    initial_15m_vol := 0.0
+
+// Accumulate volume during the first 15 mins
+if is_first_15m
+    initial_15m_vol += volume
+
+// Fetch the 15-minute volume for the current bar context
+vol_15m = request.security(syminfo.tickerid, "15", volume, lookahead=barmerge.lookahead_off)
+
+// Color candle white if the current 15m volume exceeds the initial 09:15-09:30 volume
+is_vol_breakout = timeframe.isintraday and not is_first_15m and (vol_15m > initial_15m_vol)
+
 upcolor = color.rgb(0, 135, 225)
 dwncolor = color.rgb(255, 0, 0)
-ntlcolor = color.rgb(255, 255, 255, 30)
+ntlcolor = color.rgb(255, 255, 255)
 
-barcolor(bull ? upcolor : neutral ? ntlcolor : dwncolor)
+// If intraday and volume broke out, color white. Else use XTL bull/bear logic
+barcolor(is_vol_breakout ? ntlcolor : (bull ? upcolor : bear ? dwncolor : na))
+
+// --- AVWAP Inputs & Logic ---
+avwap_color_up = input.color(color.green, title="AVWAP Trend Up Color", group="AVWAP Settings")
+avwap_color_dn = input.color(color.red, title="AVWAP Trend Down Color", group="AVWAP Settings")
+avwap_color_fl = input.color(color.white, title="AVWAP Trend Flat Color", group="AVWAP Settings")
+
+// Identify 09:15 candle in Asia/Kolkata timezone
+is_915 = hour(time, "Asia/Kolkata") == 9 and minute(time, "Asia/Kolkata") == 15
+
+var float cum_high_vol = 0.0
+var float cum_vol = 0.0
+var int bars_since_915 = 0
+
+if is_915
+    cum_high_vol := high * volume
+    cum_vol := volume
+    bars_since_915 := 0
+else
+    cum_high_vol += high * volume
+    cum_vol += volume
+    bars_since_915 += 1
+
+avwap = cum_vol > 0 ? cum_high_vol / cum_vol : na
+
+// AVWAP Price Breakout Logic
+color current_avwap_color = avwap_color_fl // Default to flat
+if close > avwap
+    current_avwap_color := avwap_color_up
+else if close < avwap
+    current_avwap_color := avwap_color_dn
+
+var line[] avwap_lines = array.new_line()
+
+if is_915
+    if array.size(avwap_lines) > 0
+        for l in avwap_lines
+            line.delete(l)
+        array.clear(avwap_lines)
+
+if not na(avwap) and not na(avwap[1]) and not is_915
+    l = line.new(bar_index[1], avwap[1], bar_index, avwap, color=current_avwap_color, width=2)
+    array.push(avwap_lines, l)
+
 
 //Displaced Moving Average (DMA)
 showdma = input.bool(true, "Show DMA?")
