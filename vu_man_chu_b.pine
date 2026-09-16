@@ -4,8 +4,8 @@ Quick explanation from "Market Cipher - what is just a closed source of this scr
 
 Market Cipher B is an all-in-one oscillator allowing for more quality indications than ever before.
 It combines five algorithms (some well-known, some custom) that have all been fine-tuned and smoothed for optimal analysis and trading results.
-When all of the algorithms converge, Market Cipher B will project a “Green Dot” which will aid you in longing the dips in bull markets as well as temporarily exiting shorts in bear markets.
-The Green Dot is often accompanied by extreme sellers’ momentum and will warn you of potential market bottoms, giving you strong hands even when the night is at its darkest.
+When all of the algorithms converge, Market Cipher B will project a "Green Dot" which will aid you in longing the dips in bull markets as well as temporarily exiting shorts in bear markets.
+The Green Dot is often accompanied by extreme sellers' momentum and will warn you of potential market bottoms, giving you strong hands even when the night is at its darkest.
 Market Cipher B certainly excels on the small time frames, but is a particularly deadly tool for isolating large swings in the market.
 
 Key Features:
@@ -16,20 +16,20 @@ Ultimate market barometer and trade initiator
 Recommended candles: heiken ashi or standard candlesticks
 Primary Triggers:
 
-Green Dots – Leading buy signals that excel in sideways and upwards trends.
+Green Dots - Leading buy signals that excel in sideways and upwards trends.
 
-Blue Waves – You are looking for overbought and oversold readings for the most part here, but to get the most out of these waves, learn how to spot divergent price action which often foreshadows a future price move.
+Blue Waves - You are looking for overbought and oversold readings for the most part here, but to get the most out of these waves, learn how to spot divergent price action which often foreshadows a future price move.
 
-Yellow VWAP – We have incorporated the VWAP into an oscillator. It is the easiest algorithm on B to read. When it crosses up, you are long until the next cross down. When it crosses down, you are short until the next cross up.
+Yellow VWAP - We have incorporated the VWAP into an oscillator. It is the easiest algorithm on B to read. When it crosses up, you are long until the next cross down. When it crosses down, you are short until the next cross up.
 
 Secondary Triggers:
 
-MFI – The custom Money Flow oscillator gives a great visual of market conditions. When it is green, we say the grass is growing, the Bulls are grazing, and the strategy is to buy dips.
+MFI - The custom Money Flow oscillator gives a great visual of market conditions. When it is green, we say the grass is growing, the Bulls are grazing, and the strategy is to buy dips.
 When the MFI is red, buyers are dead, and the prevailing strategy is to short the peaks. You can filter many bad trades by paying attention to the MFI.
 
-RSI – The RSI misses many opportunities on its own, but when used in tandem the other oscillators in B, can provide an extra layer of confidence via overbought and oversold readings.
+RSI - The RSI misses many opportunities on its own, but when used in tandem the other oscillators in B, can provide an extra layer of confidence via overbought and oversold readings.
 
-Stochastic RSI – The Stochastic RSI is an indicator of an indicator. When it crosses the regular RSI, it paints green or red, signaling a bullish or bearish cross.
+Stochastic RSI - The Stochastic RSI is an indicator of an indicator. When it crosses the regular RSI, it paints green or red, signaling a bullish or bearish cross.
 No more manual scanning for RSI crosses! These events have greater importance on higher timeframes where the Stochastic RSI often paints red or green for weeks or months at a time.
 When the change in color finally occurs, that can be a strong indication to long or short.
 */
