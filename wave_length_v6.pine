@@ -1,0 +1,171 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © FractalTrade15
+
+//@version=6
+indicator(title="Wave Length", shorttitle="Wave Length", overlay=true, max_lines_count=500)
+
+// --- XTL & Candle Color Logic ---
+len     = input.int(34, minval=1, title = "XTL Period")
+hLmt    = input.float(34, title="Threshold Value", minval=10)
+
+xtl_src = hlc3
+XTL = ta.cci(xtl_src, len)
+
+bull = XTL > hLmt
+bear = XTL < -hLmt
+neutral = (XTL <= hLmt) and (XTL >= -hLmt)
+
+// 15-Minute Volume Breakout (replaces XTL neutral for white candles)
+var float initial_15m_vol = na
+var float current_15m_vol = na
+
+// Calculate time within 09:15 to 09:30 for Asia/Kolkata
+is_first_15m = timeframe.isintraday and hour(time, "Asia/Kolkata") == 9 and minute(time, "Asia/Kolkata") >= 15 and minute(time, "Asia/Kolkata") < 30
+
+// Reset at the start of a new day
+if nz(ta.change(time("D"))) != 0
+    initial_15m_vol := 0.0
+
+// Accumulate volume during the first 15 mins
+if is_first_15m
+    initial_15m_vol += volume
+
+// Track ongoing 15m volume locally without request.security repainting
+if nz(ta.change(time("15"))) != 0
+    current_15m_vol := volume
+else
+    current_15m_vol += volume
+
+// Color candle white if the current 15m volume exceeds the initial 09:15-09:30 volume
+is_vol_breakout = timeframe.isintraday and not is_first_15m and (current_15m_vol > initial_15m_vol)
+
+upcolor = color.rgb(0, 135, 225)
+dwncolor = color.rgb(255, 0, 0)
+ntlcolor = color.rgb(255, 255, 255)
+
+// If intraday and volume broke out, color white. Else use XTL bull/bear logic
+barcolor(is_vol_breakout ? ntlcolor : (bull ? upcolor : bear ? dwncolor : na))
+
+// --- AVWAP Inputs & Logic ---
+avwap_color_up = input.color(color.green, title="AVWAP Trend Up Color", group="AVWAP Settings")
+avwap_color_dn = input.color(color.red, title="AVWAP Trend Down Color", group="AVWAP Settings")
+avwap_color_fl = input.color(color.white, title="AVWAP Trend Flat Color", group="AVWAP Settings")
+
+// Identify 09:15 candle in Asia/Kolkata timezone
+is_915 = hour(time, "Asia/Kolkata") == 9 and minute(time, "Asia/Kolkata") == 15
+
+var float cum_high_vol = 0.0
+var float cum_vol = 0.0
+var int bars_since_915 = 0
+
+if is_915
+    cum_high_vol := high * volume
+    cum_vol := volume
+    bars_since_915 := 0
+else
+    cum_high_vol += high * volume
+    cum_vol += volume
+    bars_since_915 += 1
+
+avwap = cum_vol > 0 ? cum_high_vol / cum_vol : na
+
+// AVWAP Price Breakout Logic
+color current_avwap_color = avwap_color_fl // Default to flat
+if close > avwap
+    current_avwap_color := avwap_color_up
+else if close < avwap
+    current_avwap_color := avwap_color_dn
+
+var line[] avwap_lines = array.new_line()
+
+if is_915
+    if array.size(avwap_lines) > 0
+        for l in avwap_lines
+            line.delete(l)
+        array.clear(avwap_lines)
+
+if not na(avwap) and not na(avwap[1]) and not is_915
+    l = line.new(bar_index[1], avwap[1], bar_index, avwap, color=current_avwap_color, width=2)
+    array.push(avwap_lines, l)
+
+
+//Displaced Moving Average (DMA)
+showdma = input.bool(true, "Show DMA?")
+malength = input.int(8, minval=1, title="DMA Length")
+displacement=input.int(5, minval=0, title="DMA Displacement")
+
+DMA1 = ta.sma(low, malength)
+DMA2 = ta.sma(high, malength)
+
+DMA_Color = DMA1 > DMA1[1] ? color.rgb(50, 125, 255, 60) : DMA1 <= DMA1[1] ? color.rgb(250, 0, 0, 60) : color.black
+ccol = color.rgb(255, 255, 255, 90)
+d1 = plot(showdma ? DMA1 : na, title="DMA1", color = DMA_Color, linewidth = 2, offset = displacement)
+d2 = plot(showdma ? DMA2 : na, title="DMA2", color = DMA_Color, linewidth = 2, offset = displacement)
+fill(d1, d2, color = ccol, title = "DMA Cloud")
+
+///Breakout Bar Entry & Stop
+showbbar = input.bool(true, title = "Show Breakout Bar Signals")
+cont = input.bool(false, title = "Levels as Lines")
+
+var int state = 0
+state := bear ? 0 : bull ? 1 : neutral ? nz(state[1]) : na
+prev_state = nz(state[1])
+
+bbar_stop = input.float(0.5, title = "Stop Loss Ratio")
+bbar_entry = input.float(1.5, title = "Entry Ratio")
+
+tar1 = input.bool(true, title = "Show Target 1")
+tar2 = input.bool(false, title = "Show Target 2")
+bbar_tgt1 = input.float(3.0, title = "Target Ratio 1")
+bbar_tgt2 = input.float(4.0, title = "Target Ratio 2")
+
+bar_range = high - low
+
+var float cstop = 0
+cstop := state > prev_state ? (low - bar_range * bbar_stop) : state < prev_state ? (high + bar_range * bbar_stop) : nz(cstop[1], na)
+var float centry = 0
+centry := state > prev_state ? (low + bar_range * bbar_entry) : state < prev_state ? (high - bar_range * bbar_entry) : nz(centry[1], na)
+var float ctgt1 = 0
+ctgt1 := state > prev_state ? (low + bar_range * bbar_tgt1) : state < prev_state ? (high - bar_range * bbar_tgt1) : nz(ctgt1[1], na)
+var float ctgt2 = 0
+ctgt2 := state > prev_state ? (low + bar_range * bbar_tgt2) : state < prev_state ? (high - bar_range * bbar_tgt2) : nz(ctgt2[1], na)
+
+ncstop = state > prev_state ? (low - bar_range * bbar_stop) : state < prev_state ? (high + bar_range * bbar_stop) : na
+ncentry = state > prev_state ? (low + bar_range * bbar_entry) : state < prev_state ? (high - bar_range * bbar_entry) : na
+nctgt1 = state > prev_state ? (low + bar_range * bbar_tgt1) : state < prev_state ? (high - bar_range * bbar_tgt1) : na
+nctgt2 = state > prev_state ? (low + bar_range * bbar_tgt2) : state < prev_state ? (high - bar_range * bbar_tgt2) : na
+
+pstop = cont ? cstop : ncstop
+pentry = cont ? centry : ncentry
+ptgt1 = cont ? ctgt1 : nctgt1
+ptgt2 = cont ? ctgt2 : nctgt2
+displ = cont ? -1 : 0
+
+var int colbar = 1
+colbar := bull ? 1 : bear ? 0 : nz(colbar[1], na)
+color entrycol = colbar == 1 ? color.rgb(0,0,255) : color.rgb(255,0,0)
+color stopcol = colbar == 1 ? color.rgb(255,0,0) : color.rgb(0,0,255)
+
+plot(showbbar ? (nz(ta.change(pstop)) != 0 ? na : pstop) : na, title='Stop', color=stopcol, linewidth=2, style=plot.style_circles, offset= displ)
+plot(showbbar ? (nz(ta.change(pentry)) != 0 ? na : pentry) : na, title='Entry Signal', color=entrycol, linewidth=2, style=plot.style_linebr, offset= displ)
+plot((showbbar and tar1) ? (nz(ta.change(ptgt1)) != 0 ? na : ptgt1) : na, title='Target 1', color=color.yellow, linewidth=2, style=plot.style_cross, offset = displ)
+plot((showbbar and tar2) ? (nz(ta.change(ptgt2)) != 0 ? na : ptgt2) : na, title='Target 2', color=color.yellow, linewidth=2, style=plot.style_cross, offset = displ)
+
+// === Script 2 Logic (Weekly ADX Breakout) ===
+adxLen = input.int(14, title="ADX/DMI Length")
+adxCompression = input.float(10.0, title="ADX Compression Level")
+
+// Function to compute ADX signal
+f_adx_weekly_signal(length, compression) =>
+    [diPlus, diMinus, adx] = ta.dmi(length, length)
+    adxWasCompressed = adx[1] < compression
+    adxTurningUp = adx > adx[1]
+    diCrossover = ta.crossover(diPlus, diMinus)
+    diSlopingUp = diPlus > diPlus[1]
+
+    adxWasCompressed and adxTurningUp and diCrossover and diSlopingUp
+
+// Use request.security for Weekly timeframe regardless of chart timeframe
+weeklySignal = request.security(syminfo.tickerid, "W", f_adx_weekly_signal(adxLen, adxCompression))
+
+plotshape(weeklySignal, title="Bullish Signal", style=shape.triangleup, location=location.belowbar, color=color.green, size=size.small)
