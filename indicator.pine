@@ -1,0 +1,239 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © user
+
+//@version=6
+indicator("Custom AVWAP, Volume & Pattern Indicator", shorttitle="CustomInd", overlay=true, max_lines_count=500, max_labels_count=500, max_bars_back=5000, max_boxes_count=500)
+
+// --- INPUTS ---
+// AVWAP Inputs
+grp_avwap = "AVWAP Settings"
+start_time = input.time(timestamp("20 Jan 2024 00:00 +0000"), title="AVWAP Start Time", group=grp_avwap)
+swing_length = input.int(5, title="Swing Length (Left/Right)", minval=1, group=grp_avwap)
+
+// Volume Inputs
+grp_vol = "Volume Settings"
+vol_lookback = input.int(50, title="Volume Observation Candles", minval=1, group=grp_vol)
+
+// Moving Averages Inputs
+grp_ma = "Moving Averages"
+ma1_len = input.int(10, title="MA 1 Length", group=grp_ma)
+ma1_type = input.string("EMA", title="MA 1 Type", options=["EMA", "SMA"], group=grp_ma)
+ma2_len = input.int(20, title="MA 2 Length", group=grp_ma)
+ma2_type = input.string("EMA", title="MA 2 Type", options=["EMA", "SMA"], group=grp_ma)
+ma3_len = input.int(50, title="MA 3 Length", group=grp_ma)
+ma3_type = input.string("EMA", title="MA 3 Type", options=["EMA", "SMA"], group=grp_ma)
+ma_lookback = input.int(100, title="MA Visible Lookback (Candles)", minval=1, group=grp_ma)
+
+// Pattern Inputs
+grp_pat = "Pattern Recognition"
+show_patterns = input.bool(true, title="Show Patterns (Double Top/Bottom, Correction)", group=grp_pat)
+
+
+// --- AVWAP LOGIC ---
+// Time condition for anchored VWAP
+is_new_period = time >= start_time and time[1] < start_time
+
+// Variables for VWAP calculation
+var float sum_src_vol = 0.0
+var float sum_vol = 0.0
+
+if is_new_period
+    sum_src_vol := high * volume // specifically requested high
+    sum_vol := volume
+else if time >= start_time
+    sum_src_vol += high * volume
+    sum_vol += volume
+
+avwap_val = sum_vol > 0 ? sum_src_vol / sum_vol : na
+
+// Swing Calculations
+ph = ta.pivothigh(high, swing_length, swing_length)
+pl = ta.pivotlow(low, swing_length, swing_length)
+
+var float last_swing_high = na
+var float last_swing_low = na
+
+if not na(ph)
+    last_swing_high := ph
+if not na(pl)
+    last_swing_low := pl
+
+// Rangebound logic (last 4 candles, EXCLUDING current candle to prevent false true)
+highest_4 = ta.highest(high[1], 4)
+lowest_4 = ta.lowest(low[1], 4)
+is_rangebound = close <= highest_4 and close >= lowest_4
+
+// AVWAP Color Logic
+color avwap_color = color.new(color.gray, 0)
+if is_rangebound
+    avwap_color := color.new(color.white, 0)
+else if close > avwap_val and close > last_swing_high
+    avwap_color := color.new(color.green, 0)
+else if close < avwap_val and close < last_swing_low
+    avwap_color := color.new(color.red, 0)
+
+plot(avwap_val, title="AVWAP", color=avwap_color, linewidth=2)
+
+// --- VOLUME LOGIC ---
+// Daily First 15m Volume Logic
+var float first_15m_vol = na
+is_new_day = ta.change(time("D")) != 0
+if is_new_day
+    first_15m_vol := volume
+
+color bar_color = na
+if not na(first_15m_vol) and volume > first_15m_vol
+    bar_color := color.white
+barcolor(bar_color)
+
+// Only evaluate fully closed candles for lookback
+var float highest_vol = na
+var float lowest_vol = na
+var int highest_vol_bar_index = na
+var int lowest_vol_bar_index = na
+var float highest_vol_high = na
+var float lowest_vol_low = na
+
+var line high_vol_line = na
+var line low_vol_line = na
+var box high_vol_box = na
+var box low_vol_box = na
+
+if barstate.isconfirmed
+    float current_max_vol = -1.0
+    float current_min_vol = 999999999999.0
+    int max_idx = -1
+    int min_idx = -1
+
+    for i = 1 to vol_lookback
+        if not na(volume[i])
+            if volume[i] > current_max_vol
+                current_max_vol := volume[i]
+                max_idx := i
+            if volume[i] < current_min_vol
+                current_min_vol := volume[i]
+                min_idx := i
+
+    if max_idx != -1
+        highest_vol := current_max_vol
+        highest_vol_bar_index := bar_index - max_idx
+        highest_vol_high := high[max_idx]
+
+    if min_idx != -1
+        lowest_vol := current_min_vol
+        lowest_vol_bar_index := bar_index - min_idx
+        lowest_vol_low := low[min_idx]
+
+var bool high_vol_broken = false
+var bool low_vol_broken = false
+
+if barstate.isconfirmed
+    if not na(highest_vol_high) and close > highest_vol_high
+        high_vol_broken := true
+    if not na(lowest_vol_low) and close < lowest_vol_low
+        low_vol_broken := true
+
+    if ta.change(highest_vol_bar_index) != 0
+        high_vol_broken := false
+        if not na(high_vol_line)
+            line.delete(high_vol_line)
+        if not na(high_vol_box)
+            box.delete(high_vol_box)
+
+        high_vol_line := line.new(highest_vol_bar_index, highest_vol_high, bar_index, highest_vol_high, color=color.yellow, width=2)
+        // Highlight historical candle with a box instead of barcolor
+        high_vol_box := box.new(highest_vol_bar_index, high[bar_index - highest_vol_bar_index], highest_vol_bar_index, low[bar_index - highest_vol_bar_index], border_color=color.yellow, bgcolor=color.new(color.yellow, 70))
+    else if not high_vol_broken and not na(high_vol_line)
+        line.set_x2(high_vol_line, bar_index)
+
+    if ta.change(lowest_vol_bar_index) != 0
+        low_vol_broken := false
+        if not na(low_vol_line)
+            line.delete(low_vol_line)
+        if not na(low_vol_box)
+            box.delete(low_vol_box)
+
+        low_vol_line := line.new(lowest_vol_bar_index, lowest_vol_low, bar_index, lowest_vol_low, color=color.blue, width=2)
+        // Highlight historical candle with a box instead of barcolor
+        low_vol_box := box.new(lowest_vol_bar_index, high[bar_index - lowest_vol_bar_index], lowest_vol_bar_index, low[bar_index - lowest_vol_bar_index], border_color=color.blue, bgcolor=color.new(color.blue, 70))
+    else if not low_vol_broken and not na(low_vol_line)
+        line.set_x2(low_vol_line, bar_index)
+
+
+// --- MOVING AVERAGES LOGIC ---
+float ma1_val = na
+if ma1_type == "EMA"
+    ma1_val := ta.ema(close, ma1_len)
+else
+    ma1_val := ta.sma(close, ma1_len)
+
+float ma2_val = na
+if ma2_type == "EMA"
+    ma2_val := ta.ema(close, ma2_len)
+else
+    ma2_val := ta.sma(close, ma2_len)
+
+float ma3_val = na
+if ma3_type == "EMA"
+    ma3_val := ta.ema(close, ma3_len)
+else
+    ma3_val := ta.sma(close, ma3_len)
+
+bool is_ma_visible = bar_index >= (last_bar_index - ma_lookback)
+
+plot(is_ma_visible ? ma1_val : na, title="MA 1", color=color.new(color.orange, 0))
+plot(is_ma_visible ? ma2_val : na, title="MA 2", color=color.new(color.purple, 0))
+plot(is_ma_visible ? ma3_val : na, title="MA 3", color=color.new(color.teal, 0))
+
+// --- PATTERN RECOGNITION LOGIC ---
+if show_patterns
+    float tolerance = 0.005
+
+    var float last_ph1 = na
+    var float last_ph2 = na
+    var int last_ph1_bar = na
+    var int last_ph2_bar = na
+
+    var float last_pl1 = na
+    var float last_pl2 = na
+    var int last_pl1_bar = na
+    var int last_pl2_bar = na
+
+    if not na(ph)
+        last_ph2 := last_ph1
+        last_ph2_bar := last_ph1_bar
+        last_ph1 := ph
+        last_ph1_bar := bar_index - swing_length
+
+    if not na(pl)
+        last_pl2 := last_pl1
+        last_pl2_bar := last_pl1_bar
+        last_pl1 := pl
+        last_pl1_bar := bar_index - swing_length
+
+    if not na(ph) and not na(last_ph2)
+        bool pl_in_between = not na(last_pl1_bar) and last_pl1_bar > last_ph2_bar and last_pl1_bar < last_ph1_bar
+        float diff = math.abs(last_ph1 - last_ph2)
+        float avg_ph = (last_ph1 + last_ph2) / 2
+
+        if pl_in_between and (diff / avg_ph) <= tolerance
+            label.new(last_ph1_bar, last_ph1, text="Double Top", style=label.style_label_down, color=color.red, textcolor=color.white, size=size.small)
+
+    if not na(pl) and not na(last_pl2)
+        bool ph_in_between = not na(last_ph1_bar) and last_ph1_bar > last_pl2_bar and last_ph1_bar < last_pl1_bar
+        float diff = math.abs(last_pl1 - last_pl2)
+        float avg_pl = (last_pl1 + last_pl2) / 2
+
+        if ph_in_between and (diff / avg_pl) <= tolerance
+            label.new(last_pl1_bar, last_pl1, text="Double Bottom", style=label.style_label_up, color=color.green, textcolor=color.white, size=size.small)
+
+    bool is_uptrend = close > ma3_val and ma3_val > nz(ma3_val[5])
+    bool is_downtrend = close < ma3_val and ma3_val < nz(ma3_val[5])
+
+    if is_uptrend and not na(pl) and last_pl1 > ma3_val
+        if (last_ph1 - last_pl1) / last_ph1 < 0.05
+            label.new(last_pl1_bar, last_pl1, text="Correction (Up)", style=label.style_label_up, color=color.blue, textcolor=color.white, size=size.small)
+
+    if is_downtrend and not na(ph) and last_ph1 < ma3_val
+        if (last_ph1 - last_pl1) / last_pl1 < 0.05
+            label.new(last_ph1_bar, last_ph1, text="Correction (Down)", style=label.style_label_down, color=color.orange, textcolor=color.white, size=size.small)
