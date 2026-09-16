@@ -17,23 +17,27 @@ neutral = (XTL <= hLmt) and (XTL >= -hLmt)
 
 // 15-Minute Volume Breakout (replaces XTL neutral for white candles)
 var float initial_15m_vol = na
+var float current_15m_vol = na
 
 // Calculate time within 09:15 to 09:30 for Asia/Kolkata
 is_first_15m = timeframe.isintraday and hour(time, "Asia/Kolkata") == 9 and minute(time, "Asia/Kolkata") >= 15 and minute(time, "Asia/Kolkata") < 30
 
 // Reset at the start of a new day
-if ta.change(time("D"))
+if nz(ta.change(time("D"))) != 0
     initial_15m_vol := 0.0
 
 // Accumulate volume during the first 15 mins
 if is_first_15m
     initial_15m_vol += volume
 
-// Fetch the 15-minute volume for the current bar context
-vol_15m = request.security(syminfo.tickerid, "15", volume, lookahead=barmerge.lookahead_off)
+// Track ongoing 15m volume locally without request.security repainting
+if nz(ta.change(time("15"))) != 0
+    current_15m_vol := volume
+else
+    current_15m_vol += volume
 
 // Color candle white if the current 15m volume exceeds the initial 09:15-09:30 volume
-is_vol_breakout = timeframe.isintraday and not is_first_15m and (vol_15m > initial_15m_vol)
+is_vol_breakout = timeframe.isintraday and not is_first_15m and (current_15m_vol > initial_15m_vol)
 
 upcolor = color.rgb(0, 135, 225)
 dwncolor = color.rgb(255, 0, 0)
@@ -142,10 +146,10 @@ colbar := bull ? 1 : bear ? 0 : nz(colbar[1], na)
 color entrycol = colbar == 1 ? color.rgb(0,0,255) : color.rgb(255,0,0)
 color stopcol = colbar == 1 ? color.rgb(255,0,0) : color.rgb(0,0,255)
 
-plot(showbbar ? (ta.change(pstop) ? na : pstop) : na, title='Stop', color=stopcol, linewidth=2, style=plot.style_circles, offset= displ)
-plot(showbbar ? (ta.change(pentry) ? na : pentry) : na, title='Entry Signal', color=entrycol, linewidth=2, style=plot.style_linebr, offset= displ)
-plot((showbbar and tar1) ? (ta.change(ptgt1) ? na : ptgt1) : na, title='Target 1', color=color.yellow, linewidth=2, style=plot.style_cross, offset = displ)
-plot((showbbar and tar2) ? (ta.change(ptgt2) ? na : ptgt2) : na, title='Target 2', color=color.yellow, linewidth=2, style=plot.style_cross, offset = displ)
+plot(showbbar ? (nz(ta.change(pstop)) != 0 ? na : pstop) : na, title='Stop', color=stopcol, linewidth=2, style=plot.style_circles, offset= displ)
+plot(showbbar ? (nz(ta.change(pentry)) != 0 ? na : pentry) : na, title='Entry Signal', color=entrycol, linewidth=2, style=plot.style_linebr, offset= displ)
+plot((showbbar and tar1) ? (nz(ta.change(ptgt1)) != 0 ? na : ptgt1) : na, title='Target 1', color=color.yellow, linewidth=2, style=plot.style_cross, offset = displ)
+plot((showbbar and tar2) ? (nz(ta.change(ptgt2)) != 0 ? na : ptgt2) : na, title='Target 2', color=color.yellow, linewidth=2, style=plot.style_cross, offset = displ)
 
 // === Script 2 Logic (Weekly ADX Breakout) ===
 adxLen = input.int(14, title="ADX/DMI Length")
