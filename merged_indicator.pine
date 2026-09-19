@@ -236,11 +236,11 @@ bool is_hi_vol = show_vh and v_hist == v_highest
 bool is_lo_vol = show_vh and v_hist == v_lowest
 
 if is_hi_vol
-    lbl = label.new(bar_index - 1, high[1], style=stringToStyle(shape_hi_vol), color=col_hi_vol, yloc=yloc.abovebar, size=size.small, tooltip="Highest Volume")
+    lbl = label.new(bar_index - 1, low[1], style=stringToStyle(shape_hi_vol), color=col_hi_vol, yloc=yloc.belowbar, size=size.tiny, tooltip="Highest Volume")
     array.push(all_labels, lbl)
 
 if is_lo_vol
-    lbl = label.new(bar_index - 1, low[1], style=stringToStyle(shape_lo_vol), color=col_lo_vol, yloc=yloc.belowbar, size=size.small, tooltip="Lowest Volume")
+    lbl = label.new(bar_index - 1, low[1], style=stringToStyle(shape_lo_vol), color=col_lo_vol, yloc=yloc.belowbar, size=size.tiny, tooltip="Lowest Volume")
     array.push(all_labels, lbl)
 
 // ---------------------------------------------------------------------------------------------------------------------}
