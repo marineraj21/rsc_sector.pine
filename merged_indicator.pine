@@ -1,0 +1,275 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+//@version=6
+indicator("Unified S/R Zones & Volume Highlights [Futuristic]", shorttitle="Unified S/R", overlay=true, max_boxes_count=500, max_lines_count=500, max_labels_count=500)
+
+// ---------------------------------------------------------------------------------------------------------------------}
+// 𝙐𝙎𝙀𝙍 𝙄𝙉𝙋𝙐𝙏𝙎
+// ---------------------------------------------------------------------------------------------------------------------{
+grp_vis    = "Visibility Settings"
+vis_lookback = input.int(100, "Visibility Lookback (Bars)", minval=1, group=grp_vis, tooltip="Only show indicator visuals for the last X bars")
+
+grp_method = "S/R Calculation Method"
+method_sel = input.string("Pivot + Vol Delta", "Select Method", options=["Pivot + Vol Delta", "Fractal + Vol MA"], group=grp_method)
+
+grp_piv    = "Pivot + Vol Delta Settings"
+piv_len    = input.int(20, "Lookback Period (Pivot)", minval=1, group=grp_piv)
+vol_len    = input.int(2,  "Delta Volume Filter Length", group=grp_piv)
+box_width  = input.float(1, "Box Width Multiplier (ATR)", minval=0.1, step=0.1, group=grp_piv)
+
+grp_frac   = "Fractal + Vol MA Settings"
+vol_ma_len = input.int(6, "Volume MA Threshold Length", group=grp_frac)
+
+grp_gen    = "General Drawing & Timeframe Settings"
+tf1        = input.timeframe("", "Timeframe 1", group=grp_gen)
+tf2        = input.timeframe("240", "Timeframe 2", group=grp_gen)
+max_zones  = input.int(5, "Max Zones to Keep on Chart (Per TF)", minval=1, maxval=50, group=grp_gen)
+show_labels= input.bool(true, "Show S/R Labels", group=grp_gen)
+
+grp_color  = "Futuristic Styling & Colors"
+// Cyberpunk / Futuristic default palette
+res_color  = input.color(color.new(#ff003c, 70), "Resistance Color", group=grp_color) // Cyberpunk Red
+sup_color  = input.color(color.new(#00f0ff, 70), "Support Color", group=grp_color)    // Cyan
+res_line   = input.color(color.new(#ff003c, 0), "Resistance Border", group=grp_color)
+sup_line   = input.color(color.new(#00f0ff, 0), "Support Border", group=grp_color)
+
+res_break_col = input.color(color.new(#00ff00, 70), "Resistance Breakout Box", group=grp_color) // Neon Green
+sup_break_col = input.color(color.new(#ff00ff, 70), "Support Breakout Box", group=grp_color)    // Hot Pink
+res_break_line = input.color(color.new(#00ff00, 0), "Resistance Breakout Border", group=grp_color)
+sup_break_line = input.color(color.new(#ff00ff, 0), "Support Breakout Border", group=grp_color)
+
+grp_shapes = "Shape Customization"
+shape_res_hold = input.string("Diamond", "Resistance Holds Shape", options=["Diamond", "Circle", "Triangle Down", "Cross", "Square"], group=grp_shapes)
+shape_sup_hold = input.string("Diamond", "Support Holds Shape", options=["Diamond", "Circle", "Triangle Up", "Cross", "Square"], group=grp_shapes)
+shape_res_break = input.string("Triangle Up", "Resistance Breakout Shape", options=["Diamond", "Circle", "Triangle Up", "Cross", "Square", "Flag"], group=grp_shapes)
+shape_sup_break = input.string("Triangle Down", "Support Breakout Shape", options=["Diamond", "Circle", "Triangle Down", "Cross", "Square", "Flag"], group=grp_shapes)
+
+grp_vol    = "Highest/Lowest Volume Highlight"
+show_vh    = input.bool(true, "Show Volume Highlights", group=grp_vol)
+vh_lookbk  = input.int(50, "Volume Lookback Period", minval=1, group=grp_vol, tooltip="Excludes running candle")
+shape_hi_vol = input.string("Diamond", "Highest Volume Shape", options=["Diamond", "Circle", "Triangle Up", "Cross", "Square"], group=grp_vol)
+shape_lo_vol = input.string("Cross", "Lowest Volume Shape", options=["Diamond", "Circle", "Triangle Down", "Cross", "Square"], group=grp_vol)
+col_hi_vol = input.color(color.new(#ff00ff, 0), "Highest Volume Color", group=grp_vol)
+col_lo_vol = input.color(color.new(#ffaa00, 0), "Lowest Volume Color", group=grp_vol)
+
+// ... rest of the code
+
+// ---------------------------------------------------------------------------------------------------------------------}
+// 𝙃𝙀𝙇𝙋𝙀𝙍 𝙁𝙐𝙉𝘾𝙏𝙄𝙊𝙉𝙎
+// ---------------------------------------------------------------------------------------------------------------------{
+stringToStyle(str) =>
+    switch str
+        "Diamond" => label.style_diamond
+        "Circle" => label.style_circle
+        "Triangle Up" => label.style_triangleup
+        "Triangle Down" => label.style_triangledown
+        "Cross" => label.style_cross
+        "Square" => label.style_square
+        "Flag" => label.style_flag
+        => label.style_diamond
+
+// ---------------------------------------------------------------------------------------------------------------------}
+// 𝙈𝙀𝙏𝙃𝙊𝘿 𝘾𝘼𝙇𝘾𝙐𝙇𝘼𝙏𝙄𝙊𝙉𝙎 (Agnostic of Timeframe)
+// ---------------------------------------------------------------------------------------------------------------------{
+
+// Method A: Delta Volume & Pivots
+upDownVol() =>
+    float posVol = 0.0
+    float negVol = 0.0
+    bool isBuy = close > open
+    if isBuy
+        posVol += volume
+    else
+        negVol += volume
+    posVol - negVol // Net delta
+
+calc_method_A() =>
+    netVol = upDownVol()
+    vHi = ta.highest(netVol / 2.5, vol_len)
+    vLo = ta.lowest(netVol / 2.5, vol_len)
+
+    ph = ta.pivothigh(close, piv_len, piv_len)
+    pl = ta.pivotlow(close, piv_len, piv_len)
+
+    bool isRes = not na(ph) and netVol < vLo
+    bool isSup = not na(pl) and netVol > vHi
+
+    float atr = ta.atr(200)
+    float bw = atr * box_width
+
+    float rTop = isRes ? ph : na
+    float rBot = isRes ? ph - bw : na
+    float sBot = isSup ? pl : na
+    float sTop = isSup ? pl + bw : na
+
+    [isRes, rTop, rBot, isSup, sTop, sBot, bar_index[piv_len]]
+
+// Method B: Fractals & Volume MA
+calc_method_B() =>
+    float vma = ta.sma(volume, vol_ma_len)
+
+    bool fUp_cond = high[3] > high[4] and high[4] > high[5] and high[2] < high[3] and high[1] < high[2] and volume[3] > vma[3]
+    bool fDn_cond = low[3] < low[4] and low[4] < low[5] and low[2] > low[3] and low[1] > low[2] and volume[3] > vma[3]
+
+    float rTop = fUp_cond ? high[3] : na
+    float rBot = fUp_cond ? (close[3] >= open[3] ? close[3] : open[3]) : na
+
+    float sBot = fDn_cond ? low[3] : na
+    float sTop = fDn_cond ? (close[3] >= open[3] ? open[3] : close[3]) : na
+
+    [fUp_cond, rTop, rBot, fDn_cond, sTop, sBot, bar_index[3]]
+
+// Unified Wrapper
+unified_calc() =>
+    if method_sel == "Pivot + Vol Delta"
+        calc_method_A()
+    else
+        calc_method_B()
+
+// ---------------------------------------------------------------------------------------------------------------------}
+// 𝙏𝙄𝙈𝙀𝙁𝙍𝘼𝙈𝙀 𝙍𝙀𝙌𝙐𝙀𝙎𝙏𝙎
+// ---------------------------------------------------------------------------------------------------------------------{
+[res1, rTop1, rBot1, sup1, sTop1, sBot1, bi1] = request.security(syminfo.tickerid, tf1, unified_calc(), lookahead=barmerge.lookahead_off)
+[res2, rTop2, rBot2, sup2, sTop2, sBot2, bi2] = request.security(syminfo.tickerid, tf2, unified_calc(), lookahead=barmerge.lookahead_off)
+
+
+// ---------------------------------------------------------------------------------------------------------------------}
+// 𝘿𝙍𝘼𝙒𝙄𝙉𝙂 𝙀𝙉𝙂𝙄𝙉𝙀 & 𝙃𝙄𝙎𝙏𝙊𝙍𝙔 𝙈𝘼𝙉𝘼𝙂𝙀𝙈𝙀𝙉𝙏
+// ---------------------------------------------------------------------------------------------------------------------{
+// Type for storing zone data
+type Zone
+    box b
+    label l
+    bool isRes
+    float top
+    float bot
+    bool broken
+    int start_index
+
+var tf1_zones = array.new<Zone>()
+var tf2_zones = array.new<Zone>()
+var all_labels = array.new<label>() // Track all dynamic labels for visibility cleanup
+
+draw_zone(bool isRes, float top, float bot, int x_start, string tf_label, array<Zone> arr) =>
+    color bg = isRes ? res_color : sup_color
+    color br = isRes ? res_line : sup_line
+    string txt = tf_label + (isRes ? " Res" : " Sup")
+
+    box new_box = box.new(left=x_start, top=top, right=bar_index, bottom=bot, border_color=br, bgcolor=bg)
+    label new_lbl = na
+    if show_labels
+        new_lbl := label.new(x=bar_index, y=isRes ? top : bot, text=txt, style=isRes ? label.style_label_down : label.style_label_up, color=color.new(bg, 50), textcolor=chart.fg_color, size=size.small)
+        array.push(all_labels, new_lbl)
+
+    array.push(arr, Zone.new(new_box, new_lbl, isRes, top, bot, false, bar_index))
+
+    if array.size(arr) > max_zones
+        Zone oldest = array.shift(arr)
+        box.delete(oldest.b)
+        if show_labels
+            label.delete(oldest.l)
+
+update_zones(array<Zone> arr) =>
+    if array.size(arr) > 0
+        for i = 0 to array.size(arr) - 1
+            Zone z = array.get(arr, i)
+
+            // Check for holds/breakouts if not already broken
+            if not z.broken
+                bool is_breakout = false
+                bool is_hold = false
+
+                if z.isRes
+                    is_breakout := low[1] <= z.top and low > z.top
+                    is_hold     := high[1] >= z.bot and high < z.bot
+
+                    if is_breakout
+                        z.broken := true
+                        box.set_bgcolor(z.b, res_break_col)
+                        box.set_border_color(z.b, res_break_line)
+                        box.set_border_style(z.b, line.style_dashed)
+                        lbl = label.new(x=bar_index, y=z.top, text="Break Res", style=stringToStyle(shape_res_break), color=res_break_col, size=size.small, tooltip="Resistance Breakout")
+                        array.push(all_labels, lbl)
+                    else if is_hold
+                        lbl = label.new(x=bar_index, y=z.bot, style=stringToStyle(shape_res_hold), color=res_color, size=size.tiny, tooltip="Resistance Holds")
+                        array.push(all_labels, lbl)
+                else
+                    is_breakout := high[1] >= z.bot and high < z.bot
+                    is_hold     := low[1] <= z.top and low > z.top
+
+                    if is_breakout
+                        z.broken := true
+                        box.set_bgcolor(z.b, sup_break_col)
+                        box.set_border_color(z.b, sup_break_line)
+                        box.set_border_style(z.b, line.style_dashed)
+                        lbl = label.new(x=bar_index, y=z.bot, text="Break Sup", style=stringToStyle(shape_sup_break), color=sup_break_col, size=size.small, tooltip="Support Breakout")
+                        array.push(all_labels, lbl)
+                    else if is_hold
+                        lbl = label.new(x=bar_index, y=z.top, style=stringToStyle(shape_sup_hold), color=sup_color, size=size.tiny, tooltip="Support Holds")
+                        array.push(all_labels, lbl)
+
+            box.set_right(z.b, bar_index)
+            if show_labels
+                label.set_x(z.l, bar_index + 2)
+
+// Execute Drawing TF1
+if res1
+    draw_zone(true, rTop1, rBot1, bi1, tf1 == "" ? "Chart" : tf1, tf1_zones)
+if sup1
+    draw_zone(false, sTop1, sBot1, bi1, tf1 == "" ? "Chart" : tf1, tf1_zones)
+update_zones(tf1_zones)
+
+// Execute Drawing TF2
+if res2
+    draw_zone(true, rTop2, rBot2, bi2, tf2, tf2_zones)
+if sup2
+    draw_zone(false, sTop2, sBot2, bi2, tf2, tf2_zones)
+update_zones(tf2_zones)
+
+// ---------------------------------------------------------------------------------------------------------------------}
+// 𝙑𝙊𝙇𝙐𝙈𝙀 𝙃𝙄𝙂𝙃𝙇𝙄𝙂𝙃𝙏 & 𝘿𝙔𝙉𝘼𝙈𝙄𝘾 𝙇𝘼𝘽𝙀𝙇𝙎
+// ---------------------------------------------------------------------------------------------------------------------{
+float v_hist = volume[1]
+float v_highest = ta.highest(volume, vh_lookbk)[1]
+float v_lowest  = ta.lowest(volume, vh_lookbk)[1]
+
+bool is_hi_vol = show_vh and v_hist == v_highest
+bool is_lo_vol = show_vh and v_hist == v_lowest
+
+if is_hi_vol
+    lbl = label.new(bar_index - 1, high[1], style=stringToStyle(shape_hi_vol), color=col_hi_vol, yloc=yloc.abovebar, size=size.small, tooltip="Highest Volume")
+    array.push(all_labels, lbl)
+
+if is_lo_vol
+    lbl = label.new(bar_index - 1, low[1], style=stringToStyle(shape_lo_vol), color=col_lo_vol, yloc=yloc.belowbar, size=size.small, tooltip="Lowest Volume")
+    array.push(all_labels, lbl)
+
+// ---------------------------------------------------------------------------------------------------------------------}
+// 𝙂𝘼𝙍𝘽𝘼𝙂𝙀 𝘾𝙊𝙇𝙇𝙀𝘾𝙏𝙄𝙊𝙉 (Visibility Lookback)
+// ---------------------------------------------------------------------------------------------------------------------{
+// Cleanup Labels
+if array.size(all_labels) > 0
+    for i = array.size(all_labels) - 1 to 0
+        label lbl = array.get(all_labels, i)
+        if bar_index - label.get_x(lbl) > vis_lookback
+            label.delete(lbl)
+            array.remove(all_labels, i)
+
+// Cleanup TF1 Boxes
+if array.size(tf1_zones) > 0
+    for i = array.size(tf1_zones) - 1 to 0
+        Zone z = array.get(tf1_zones, i)
+        if bar_index - z.start_index > vis_lookback
+            box.delete(z.b)
+            if not na(z.l)
+                label.delete(z.l)
+            array.remove(tf1_zones, i)
+
+// Cleanup TF2 Boxes
+if array.size(tf2_zones) > 0
+    for i = array.size(tf2_zones) - 1 to 0
+        Zone z = array.get(tf2_zones, i)
+        if bar_index - z.start_index > vis_lookback
+            box.delete(z.b)
+            if not na(z.l)
+                label.delete(z.l)
+            array.remove(tf2_zones, i)
