@@ -136,6 +136,14 @@ unified_calc() =>
 // 𝘿𝙍𝘼𝙒𝙄𝙉𝙂 𝙀𝙉𝙂𝙄𝙉𝙀 & 𝙃𝙄𝙎𝙏𝙊𝙍𝙔 𝙈𝘼𝙉𝘼𝙂𝙀𝙈𝙀𝙉𝙏
 // ---------------------------------------------------------------------------------------------------------------------{
 // Type for storing zone data
+type VolLine
+    line ln
+    float price
+    bool active
+    int start_index
+
+var vol_lines = array.new<VolLine>()
+
 type Zone
     box b
     label l
@@ -238,13 +246,30 @@ bool is_lo_vol = show_vh and v_hist == v_lowest
 if is_hi_vol
     lbl = label.new(bar_index - 1, low[1], style=stringToStyle(shape_hi_vol), color=col_hi_vol, yloc=yloc.belowbar, size=size.tiny, tooltip="Highest Volume")
     array.push(all_labels, lbl)
+    // Create new line at the high of the highest volume candle
+    ln = line.new(x1=bar_index - 1, y1=high[1], x2=bar_index, y2=high[1], color=col_hi_vol, style=line.style_dashed, width=1)
+    array.push(vol_lines, VolLine.new(ln, high[1], true, bar_index - 1))
 
 if is_lo_vol
     lbl = label.new(bar_index - 1, low[1], style=stringToStyle(shape_lo_vol), color=col_lo_vol, yloc=yloc.belowbar, size=size.tiny, tooltip="Lowest Volume")
     array.push(all_labels, lbl)
 
+
+// Update Volume Lines (Extend until broken)
+if array.size(vol_lines) > 0
+    for i = 0 to array.size(vol_lines) - 1
+        VolLine vl = array.get(vol_lines, i)
+        if vl.active
+            // Check if price breaks above the line
+            if high > vl.price
+                vl.active := false // Stop extending
+            else
+                // Extend the line
+                line.set_x2(vl.ln, bar_index)
+
 // ---------------------------------------------------------------------------------------------------------------------}
 // 𝙂𝘼𝙍𝘽𝘼𝙂𝙀 𝘾𝙊𝙇𝙇𝙀𝘾𝙏𝙄𝙊𝙉 (Visibility Lookback)
+
 // ---------------------------------------------------------------------------------------------------------------------{
 // Cleanup Labels
 if array.size(all_labels) > 0
@@ -273,3 +298,10 @@ if array.size(tf2_zones) > 0
             if not na(z.l)
                 label.delete(z.l)
             array.remove(tf2_zones, i)
+// Cleanup Volume Lines
+if array.size(vol_lines) > 0
+    for i = array.size(vol_lines) - 1 to 0
+        VolLine vl = array.get(vol_lines, i)
+        if bar_index - vl.start_index > vis_lookback
+            line.delete(vl.ln)
+            array.remove(vol_lines, i)
