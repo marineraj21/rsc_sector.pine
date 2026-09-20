@@ -1,0 +1,295 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © user
+
+//@version=6
+indicator("Intraday AVWAP", shorttitle="Intraday", overlay=true, max_lines_count=500, max_labels_count=500, max_bars_back=5000)
+
+// ============================================================================
+// INPUTS
+// ============================================================================
+
+// --- Volume Inputs (From Script 1) ---
+grp_vol = "Volume Settings"
+vol_lookback = input.int(50, title="Volume Observation Candles", minval=1, group=grp_vol)
+vol_multiplier = input.float(1.5, title="White Candle Volume Multiplier", minval=1.0, step=0.1, group=grp_vol)
+
+// --- Moving Averages Inputs (From Script 1) ---
+grp_ma = "Moving Averages"
+ma1_len = input.int(10, title="MA 1 Length", group=grp_ma)
+ma1_type = input.string("EMA", title="MA 1 Type", options=["EMA", "SMA"], group=grp_ma)
+ma2_len = input.int(20, title="MA 2 Length", group=grp_ma)
+ma2_type = input.string("EMA", title="MA 2 Type", options=["EMA", "SMA"], group=grp_ma)
+ma3_len = input.int(50, title="MA 3 Length", group=grp_ma)
+ma3_type = input.string("EMA", title="MA 3 Type", options=["EMA", "SMA"], group=grp_ma)
+ma_lookback = input.int(100, title="MA Visible Lookback (Candles)", minval=1, group=grp_ma)
+
+// --- 09:15 AVWAP Inputs (From Script 2) ---
+grp_avwap_915 = "09:15 AVWAP Settings"
+avwap_color_up = input.color(color.green, title="09:15 AVWAP Trend Up Color", group=grp_avwap_915)
+avwap_color_dn = input.color(color.red, title="09:15 AVWAP Trend Down Color", group=grp_avwap_915)
+avwap_color_fl = input.color(color.white, title="09:15 AVWAP Trend Flat Color", group=grp_avwap_915)
+
+// --- Custom Date & Time AVWAP Inputs ---
+grp_avwap_custom = "Custom Date & Time AVWAP Settings"
+custom_start_time = input.time(timestamp("20 Jan 2024 00:00 +0000"), title="Custom AVWAP Start Time", group=grp_avwap_custom)
+custom_avwap_color_up = input.color(color.blue, title="Custom AVWAP Trend Up Color", group=grp_avwap_custom)
+custom_avwap_color_dn = input.color(color.orange, title="Custom AVWAP Trend Down Color", group=grp_avwap_custom)
+custom_avwap_color_fl = input.color(color.gray, title="Custom AVWAP Trend Flat Color", group=grp_avwap_custom)
+
+// --- Stochastic Inputs (From Script 2) ---
+grp_stoch = "Stochastic Settings (75m)"
+stoch_length = input.int(5, title="Stoch Length", group=grp_stoch)
+stoch_k      = input.int(3, title="Stoch %K", group=grp_stoch)
+stoch_d      = input.int(3, title="Stoch %D", group=grp_stoch)
+
+// Shape selections for Stochastic
+bull_shape_str = input.string("Triangle Up", title="Bullish Shape (Cross above 15)", options=["Triangle Up", "Arrow Up", "Circle", "Cross", "Label Up"], group=grp_stoch)
+bear_shape_str = input.string("Triangle Down", title="Bearish Shape (Cross below 80)", options=["Triangle Down", "Arrow Down", "Circle", "Cross", "Label Down"], group=grp_stoch)
+
+// Translate string options to actual shape constants
+get_shape(shape_str) =>
+    shape_str == "Triangle Up" ? shape.triangleup :
+     shape_str == "Triangle Down" ? shape.triangledown :
+     shape_str == "Arrow Up" ? shape.arrowup :
+     shape_str == "Arrow Down" ? shape.arrowdown :
+     shape_str == "Circle" ? shape.circle :
+     shape_str == "Cross" ? shape.cross :
+     shape_str == "Label Up" ? shape.labelup :
+     shape_str == "Label Down" ? shape.labeldown :
+     shape.circle
+
+bull_shape = get_shape(bull_shape_str)
+bear_shape = get_shape(bear_shape_str)
+
+// ============================================================================
+// VOLUME LOGIC (From Script 1)
+// ============================================================================
+
+// Only evaluate fully closed candles for lookback (i.e., volume[1] to volume[vol_lookback])
+// To find highest/lowest volume in the lookback window
+var float highest_vol = na
+var float lowest_vol = na
+var int highest_vol_bar_index = na
+var int lowest_vol_bar_index = na
+var float highest_vol_high = na
+var float lowest_vol_low = na
+var line high_vol_line = na
+var line low_vol_line = na
+
+if barstate.isconfirmed
+    // We need to look back from index 1 to vol_lookback
+    float current_max_vol = -1.0
+    float current_min_vol = 999999999999.0
+    int max_idx = -1
+    int min_idx = -1
+
+    for i = 1 to vol_lookback
+        if not na(volume[i])
+            if volume[i] > current_max_vol
+                current_max_vol := volume[i]
+                max_idx := i
+            if volume[i] < current_min_vol
+                current_min_vol := volume[i]
+                min_idx := i
+
+    if max_idx != -1
+        highest_vol := current_max_vol
+        highest_vol_bar_index := bar_index - max_idx
+        highest_vol_high := high[max_idx]
+
+    if min_idx != -1
+        lowest_vol := current_min_vol
+        lowest_vol_bar_index := bar_index - min_idx
+        lowest_vol_low := low[min_idx]
+
+// Draw lines for high/low volume levels
+var bool high_vol_broken = false
+var bool low_vol_broken = false
+
+if barstate.isconfirmed
+    // Update line status if broken
+    if not na(highest_vol_high) and close > highest_vol_high
+        high_vol_broken := true
+    if not na(lowest_vol_low) and close < lowest_vol_low
+        low_vol_broken := true
+
+    // Reset if new highest/lowest is found (different from previous)
+    if nz(ta.change(highest_vol_bar_index)) != 0
+        high_vol_broken := false
+        if not na(high_vol_line)
+            line.delete(high_vol_line)
+        high_vol_line := line.new(highest_vol_bar_index, highest_vol_high, bar_index, highest_vol_high, color=color.yellow, width=2)
+    else if not high_vol_broken and not na(high_vol_line)
+        line.set_x2(high_vol_line, bar_index)
+
+    if nz(ta.change(lowest_vol_bar_index)) != 0
+        low_vol_broken := false
+        if not na(low_vol_line)
+            line.delete(low_vol_line)
+        low_vol_line := line.new(lowest_vol_bar_index, lowest_vol_low, bar_index, lowest_vol_low, color=color.blue, width=2)
+    else if not low_vol_broken and not na(low_vol_line)
+        line.set_x2(low_vol_line, bar_index)
+
+
+// Daily First 15m Volume Logic
+var float first_15m_vol = na
+// Checking if it's a new day
+is_new_day = nz(ta.change(time("D"))) != 0
+if is_new_day
+    first_15m_vol := volume
+
+// Coloring Priority
+color bar_color = na
+
+if not na(first_15m_vol) and volume > (first_15m_vol * vol_multiplier)
+    bar_color := color.white
+else if bar_index == highest_vol_bar_index
+    bar_color := color.yellow
+else if bar_index == lowest_vol_bar_index
+    bar_color := color.blue
+
+barcolor(bar_color)
+
+// ============================================================================
+// MOVING AVERAGES LOGIC (From Script 1)
+// ============================================================================
+
+// Calculate MA 1
+float ma1_val = na
+if ma1_type == "EMA"
+    ma1_val := ta.ema(close, ma1_len)
+else
+    ma1_val := ta.sma(close, ma1_len)
+
+// Calculate MA 2
+float ma2_val = na
+if ma2_type == "EMA"
+    ma2_val := ta.ema(close, ma2_len)
+else
+    ma2_val := ta.sma(close, ma2_len)
+
+// Calculate MA 3
+float ma3_val = na
+if ma3_type == "EMA"
+    ma3_val := ta.ema(close, ma3_len)
+else
+    ma3_val := ta.sma(close, ma3_len)
+
+// Determine if MA should be visible based on lookback
+bool is_ma_visible = bar_index >= (last_bar_index - ma_lookback)
+
+plot(is_ma_visible ? ma1_val : na, title="MA 1", color=color.new(color.orange, 0))
+plot(is_ma_visible ? ma2_val : na, title="MA 2", color=color.new(color.purple, 0))
+plot(is_ma_visible ? ma3_val : na, title="MA 3", color=color.new(color.teal, 0))
+
+// ============================================================================
+// ANCHORED VWAP (09:15) LOGIC (From Script 2)
+// ============================================================================
+
+// Identify 09:15 candle in Asia/Kolkata timezone
+is_915 = hour(time, "Asia/Kolkata") == 9 and minute(time, "Asia/Kolkata") == 15
+
+var float cum_high_vol_915 = 0.0
+var float cum_vol_915 = 0.0
+var int bars_since_915 = 0
+
+if is_915
+    cum_high_vol_915 := high * volume
+    cum_vol_915 := volume
+    bars_since_915 := 0
+else
+    cum_high_vol_915 += high * volume
+    cum_vol_915 += volume
+    bars_since_915 += 1
+
+avwap_915 = cum_vol_915 > 0 ? cum_high_vol_915 / cum_vol_915 : na
+
+// Compare current AVWAP to AVWAP 4 bars ago (if we have 4 bars in the current day)
+color current_avwap_color_915 = avwap_color_fl // Default to flat
+if bars_since_915 >= 4
+    if avwap_915 > avwap_915[4]
+        current_avwap_color_915 := avwap_color_up
+    else if avwap_915 < avwap_915[4]
+        current_avwap_color_915 := avwap_color_dn
+else if bars_since_915 > 0
+    // If we don't have 4 bars yet, fallback to comparing with 1 bar ago
+    if avwap_915 > avwap_915[1]
+        current_avwap_color_915 := avwap_color_up
+    else if avwap_915 < avwap_915[1]
+        current_avwap_color_915 := avwap_color_dn
+
+var line[] avwap_lines_915 = array.new_line()
+
+if is_915
+    if array.size(avwap_lines_915) > 0
+        for l in avwap_lines_915
+            line.delete(l)
+        array.clear(avwap_lines_915)
+
+if not na(avwap_915) and not na(avwap_915[1]) and not is_915
+    l_915 = line.new(bar_index[1], avwap_915[1], bar_index, avwap_915, color=current_avwap_color_915, width=2)
+    array.push(avwap_lines_915, l_915)
+
+// ============================================================================
+// CUSTOM DATE & TIME AVWAP LOGIC
+// ============================================================================
+
+// Time condition for Custom anchored VWAP
+is_new_custom_period = time >= custom_start_time and time[1] < custom_start_time
+
+var float cum_high_vol_custom = 0.0
+var float cum_vol_custom = 0.0
+var int bars_since_custom = 0
+
+if is_new_custom_period
+    cum_high_vol_custom := high * volume
+    cum_vol_custom := volume
+    bars_since_custom := 0
+else if time >= custom_start_time
+    cum_high_vol_custom += high * volume
+    cum_vol_custom += volume
+    bars_since_custom += 1
+
+avwap_custom = cum_vol_custom > 0 ? cum_high_vol_custom / cum_vol_custom : na
+
+// Compare current Custom AVWAP to Custom AVWAP 4 bars ago
+color current_avwap_color_custom = custom_avwap_color_fl // Default to flat
+if bars_since_custom >= 4
+    if avwap_custom > avwap_custom[4]
+        current_avwap_color_custom := custom_avwap_color_up
+    else if avwap_custom < avwap_custom[4]
+        current_avwap_color_custom := custom_avwap_color_dn
+else if bars_since_custom > 0
+    if avwap_custom > avwap_custom[1]
+        current_avwap_color_custom := custom_avwap_color_up
+    else if avwap_custom < avwap_custom[1]
+        current_avwap_color_custom := custom_avwap_color_dn
+
+var line[] avwap_lines_custom = array.new_line()
+
+if is_new_custom_period
+    if array.size(avwap_lines_custom) > 0
+        for l in avwap_lines_custom
+            line.delete(l)
+        array.clear(avwap_lines_custom)
+
+if not na(avwap_custom) and not na(avwap_custom[1]) and not is_new_custom_period
+    l_custom = line.new(bar_index[1], avwap_custom[1], bar_index, avwap_custom, color=current_avwap_color_custom, width=2)
+    array.push(avwap_lines_custom, l_custom)
+
+// ============================================================================
+// 75-MINUTE STOCHASTIC LOGIC (From Script 2)
+// ============================================================================
+
+stoch_k_val = ta.stoch(close, high, low, stoch_length)
+stoch_k_smooth = ta.sma(stoch_k_val, stoch_k)
+stoch_d_val = ta.sma(stoch_k_smooth, stoch_d)
+
+// Fetch Stoch from 75m timeframe
+[stoch_75m_k, stoch_75m_d] = request.security(syminfo.tickerid, "75", [stoch_k_smooth, stoch_d_val], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+
+bull_signal = ta.crossover(stoch_75m_k, 15)
+bear_signal = ta.crossunder(stoch_75m_k, 80)
+
+plotshape(series=bull_signal, title="Stoch Bullish", style=bull_shape, location=location.belowbar, color=color.green, size=size.small)
+plotshape(series=bear_signal, title="Stoch Bearish", style=bear_shape, location=location.abovebar, color=color.red, size=size.small)
