@@ -63,7 +63,7 @@ grpH = 'Highlight'
 hlMode = input.string('By Slot/Color (Trace specific stock)', 'Highlight Mode', options=['By Slot/Color (Trace specific stock)', 'By Rank (Track Top Performers)'], group=grpH, tooltip='By Slot highlights the Nth stock in the raw list (e.g., Slot 1 is always the highest-weighted stock). By Rank highlights whichever stock is currently rank N on that specific bar.')
 
 hlTargetStr = input.string('None', 'Highlight Target', options=['None', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20'], group=grpH)
-hlTarget = hlTargetStr == 'None' ? 0 : str.tonumber(hlTargetStr)
+hlTarget = hlTargetStr == 'None' ? 0 : int(str.tonumber(hlTargetStr))
 
 grpT = 'Table'
 
@@ -588,7 +588,8 @@ id1 = nSym > 0 ? array.get(ids, 0) : dummyId
 nm1 = nSym > 0 ? array.get(nms, 0) : ''
 px1 = request.security(id1, useTf, close, ignore_invalid_symbol=true, calc_bars_count=500)
 on1 = nSym > 0 and not na(px1)
-rsLine1 = on1 ? calcRS(px1, bmPx) : na
+_rsRaw1 = calcRS(px1, bmPx)
+rsLine1 = on1 ? _rsRaw1 : na
 rs0_1 = on1 ? rsLine1 : na
 rs1_1 = on1 ? rsLine1[rsLb1] : na
 rs2_1 = on1 ? rsLine1[rsLb2] : na
@@ -598,7 +599,8 @@ id2 = nSym > 1 ? array.get(ids, 1) : dummyId
 nm2 = nSym > 1 ? array.get(nms, 1) : ''
 px2 = request.security(id2, useTf, close, ignore_invalid_symbol=true, calc_bars_count=500)
 on2 = nSym > 1 and not na(px2)
-rsLine2 = on2 ? calcRS(px2, bmPx) : na
+_rsRaw2 = calcRS(px2, bmPx)
+rsLine2 = on2 ? _rsRaw2 : na
 rs0_2 = on2 ? rsLine2 : na
 rs1_2 = on2 ? rsLine2[rsLb1] : na
 rs2_2 = on2 ? rsLine2[rsLb2] : na
@@ -608,7 +610,8 @@ id3 = nSym > 2 ? array.get(ids, 2) : dummyId
 nm3 = nSym > 2 ? array.get(nms, 2) : ''
 px3 = request.security(id3, useTf, close, ignore_invalid_symbol=true, calc_bars_count=500)
 on3 = nSym > 2 and not na(px3)
-rsLine3 = on3 ? calcRS(px3, bmPx) : na
+_rsRaw3 = calcRS(px3, bmPx)
+rsLine3 = on3 ? _rsRaw3 : na
 rs0_3 = on3 ? rsLine3 : na
 rs1_3 = on3 ? rsLine3[rsLb1] : na
 rs2_3 = on3 ? rsLine3[rsLb2] : na
@@ -618,7 +621,8 @@ id4 = nSym > 3 ? array.get(ids, 3) : dummyId
 nm4 = nSym > 3 ? array.get(nms, 3) : ''
 px4 = request.security(id4, useTf, close, ignore_invalid_symbol=true, calc_bars_count=500)
 on4 = nSym > 3 and not na(px4)
-rsLine4 = on4 ? calcRS(px4, bmPx) : na
+_rsRaw4 = calcRS(px4, bmPx)
+rsLine4 = on4 ? _rsRaw4 : na
 rs0_4 = on4 ? rsLine4 : na
 rs1_4 = on4 ? rsLine4[rsLb1] : na
 rs2_4 = on4 ? rsLine4[rsLb2] : na
@@ -628,7 +632,8 @@ id5 = nSym > 4 ? array.get(ids, 4) : dummyId
 nm5 = nSym > 4 ? array.get(nms, 4) : ''
 px5 = request.security(id5, useTf, close, ignore_invalid_symbol=true, calc_bars_count=500)
 on5 = nSym > 4 and not na(px5)
-rsLine5 = on5 ? calcRS(px5, bmPx) : na
+_rsRaw5 = calcRS(px5, bmPx)
+rsLine5 = on5 ? _rsRaw5 : na
 rs0_5 = on5 ? rsLine5 : na
 rs1_5 = on5 ? rsLine5[rsLb1] : na
 rs2_5 = on5 ? rsLine5[rsLb2] : na
@@ -638,7 +643,8 @@ id6 = nSym > 5 ? array.get(ids, 5) : dummyId
 nm6 = nSym > 5 ? array.get(nms, 5) : ''
 px6 = request.security(id6, useTf, close, ignore_invalid_symbol=true, calc_bars_count=500)
 on6 = nSym > 5 and not na(px6)
-rsLine6 = on6 ? calcRS(px6, bmPx) : na
+_rsRaw6 = calcRS(px6, bmPx)
+rsLine6 = on6 ? _rsRaw6 : na
 rs0_6 = on6 ? rsLine6 : na
 rs1_6 = on6 ? rsLine6[rsLb1] : na
 rs2_6 = on6 ? rsLine6[rsLb2] : na
@@ -648,7 +654,8 @@ id7 = nSym > 6 ? array.get(ids, 6) : dummyId
 nm7 = nSym > 6 ? array.get(nms, 6) : ''
 px7 = request.security(id7, useTf, close, ignore_invalid_symbol=true, calc_bars_count=500)
 on7 = nSym > 6 and not na(px7)
-rsLine7 = on7 ? calcRS(px7, bmPx) : na
+_rsRaw7 = calcRS(px7, bmPx)
+rsLine7 = on7 ? _rsRaw7 : na
 rs0_7 = on7 ? rsLine7 : na
 rs1_7 = on7 ? rsLine7[rsLb1] : na
 rs2_7 = on7 ? rsLine7[rsLb2] : na
@@ -658,7 +665,8 @@ id8 = nSym > 7 ? array.get(ids, 7) : dummyId
 nm8 = nSym > 7 ? array.get(nms, 7) : ''
 px8 = request.security(id8, useTf, close, ignore_invalid_symbol=true, calc_bars_count=500)
 on8 = nSym > 7 and not na(px8)
-rsLine8 = on8 ? calcRS(px8, bmPx) : na
+_rsRaw8 = calcRS(px8, bmPx)
+rsLine8 = on8 ? _rsRaw8 : na
 rs0_8 = on8 ? rsLine8 : na
 rs1_8 = on8 ? rsLine8[rsLb1] : na
 rs2_8 = on8 ? rsLine8[rsLb2] : na
@@ -668,7 +676,8 @@ id9 = nSym > 8 ? array.get(ids, 8) : dummyId
 nm9 = nSym > 8 ? array.get(nms, 8) : ''
 px9 = request.security(id9, useTf, close, ignore_invalid_symbol=true, calc_bars_count=500)
 on9 = nSym > 8 and not na(px9)
-rsLine9 = on9 ? calcRS(px9, bmPx) : na
+_rsRaw9 = calcRS(px9, bmPx)
+rsLine9 = on9 ? _rsRaw9 : na
 rs0_9 = on9 ? rsLine9 : na
 rs1_9 = on9 ? rsLine9[rsLb1] : na
 rs2_9 = on9 ? rsLine9[rsLb2] : na
@@ -678,7 +687,8 @@ id10 = nSym > 9 ? array.get(ids, 9) : dummyId
 nm10 = nSym > 9 ? array.get(nms, 9) : ''
 px10 = request.security(id10, useTf, close, ignore_invalid_symbol=true, calc_bars_count=500)
 on10 = nSym > 9 and not na(px10)
-rsLine10 = on10 ? calcRS(px10, bmPx) : na
+_rsRaw10 = calcRS(px10, bmPx)
+rsLine10 = on10 ? _rsRaw10 : na
 rs0_10 = on10 ? rsLine10 : na
 rs1_10 = on10 ? rsLine10[rsLb1] : na
 rs2_10 = on10 ? rsLine10[rsLb2] : na
@@ -688,7 +698,8 @@ id11 = nSym > 10 ? array.get(ids, 10) : dummyId
 nm11 = nSym > 10 ? array.get(nms, 10) : ''
 px11 = request.security(id11, useTf, close, ignore_invalid_symbol=true, calc_bars_count=500)
 on11 = nSym > 10 and not na(px11)
-rsLine11 = on11 ? calcRS(px11, bmPx) : na
+_rsRaw11 = calcRS(px11, bmPx)
+rsLine11 = on11 ? _rsRaw11 : na
 rs0_11 = on11 ? rsLine11 : na
 rs1_11 = on11 ? rsLine11[rsLb1] : na
 rs2_11 = on11 ? rsLine11[rsLb2] : na
@@ -698,7 +709,8 @@ id12 = nSym > 11 ? array.get(ids, 11) : dummyId
 nm12 = nSym > 11 ? array.get(nms, 11) : ''
 px12 = request.security(id12, useTf, close, ignore_invalid_symbol=true, calc_bars_count=500)
 on12 = nSym > 11 and not na(px12)
-rsLine12 = on12 ? calcRS(px12, bmPx) : na
+_rsRaw12 = calcRS(px12, bmPx)
+rsLine12 = on12 ? _rsRaw12 : na
 rs0_12 = on12 ? rsLine12 : na
 rs1_12 = on12 ? rsLine12[rsLb1] : na
 rs2_12 = on12 ? rsLine12[rsLb2] : na
@@ -708,7 +720,8 @@ id13 = nSym > 12 ? array.get(ids, 12) : dummyId
 nm13 = nSym > 12 ? array.get(nms, 12) : ''
 px13 = request.security(id13, useTf, close, ignore_invalid_symbol=true, calc_bars_count=500)
 on13 = nSym > 12 and not na(px13)
-rsLine13 = on13 ? calcRS(px13, bmPx) : na
+_rsRaw13 = calcRS(px13, bmPx)
+rsLine13 = on13 ? _rsRaw13 : na
 rs0_13 = on13 ? rsLine13 : na
 rs1_13 = on13 ? rsLine13[rsLb1] : na
 rs2_13 = on13 ? rsLine13[rsLb2] : na
@@ -718,7 +731,8 @@ id14 = nSym > 13 ? array.get(ids, 13) : dummyId
 nm14 = nSym > 13 ? array.get(nms, 13) : ''
 px14 = request.security(id14, useTf, close, ignore_invalid_symbol=true, calc_bars_count=500)
 on14 = nSym > 13 and not na(px14)
-rsLine14 = on14 ? calcRS(px14, bmPx) : na
+_rsRaw14 = calcRS(px14, bmPx)
+rsLine14 = on14 ? _rsRaw14 : na
 rs0_14 = on14 ? rsLine14 : na
 rs1_14 = on14 ? rsLine14[rsLb1] : na
 rs2_14 = on14 ? rsLine14[rsLb2] : na
@@ -728,7 +742,8 @@ id15 = nSym > 14 ? array.get(ids, 14) : dummyId
 nm15 = nSym > 14 ? array.get(nms, 14) : ''
 px15 = request.security(id15, useTf, close, ignore_invalid_symbol=true, calc_bars_count=500)
 on15 = nSym > 14 and not na(px15)
-rsLine15 = on15 ? calcRS(px15, bmPx) : na
+_rsRaw15 = calcRS(px15, bmPx)
+rsLine15 = on15 ? _rsRaw15 : na
 rs0_15 = on15 ? rsLine15 : na
 rs1_15 = on15 ? rsLine15[rsLb1] : na
 rs2_15 = on15 ? rsLine15[rsLb2] : na
@@ -738,7 +753,8 @@ id16 = nSym > 15 ? array.get(ids, 15) : dummyId
 nm16 = nSym > 15 ? array.get(nms, 15) : ''
 px16 = request.security(id16, useTf, close, ignore_invalid_symbol=true, calc_bars_count=500)
 on16 = nSym > 15 and not na(px16)
-rsLine16 = on16 ? calcRS(px16, bmPx) : na
+_rsRaw16 = calcRS(px16, bmPx)
+rsLine16 = on16 ? _rsRaw16 : na
 rs0_16 = on16 ? rsLine16 : na
 rs1_16 = on16 ? rsLine16[rsLb1] : na
 rs2_16 = on16 ? rsLine16[rsLb2] : na
@@ -748,7 +764,8 @@ id17 = nSym > 16 ? array.get(ids, 16) : dummyId
 nm17 = nSym > 16 ? array.get(nms, 16) : ''
 px17 = request.security(id17, useTf, close, ignore_invalid_symbol=true, calc_bars_count=500)
 on17 = nSym > 16 and not na(px17)
-rsLine17 = on17 ? calcRS(px17, bmPx) : na
+_rsRaw17 = calcRS(px17, bmPx)
+rsLine17 = on17 ? _rsRaw17 : na
 rs0_17 = on17 ? rsLine17 : na
 rs1_17 = on17 ? rsLine17[rsLb1] : na
 rs2_17 = on17 ? rsLine17[rsLb2] : na
@@ -758,7 +775,8 @@ id18 = nSym > 17 ? array.get(ids, 17) : dummyId
 nm18 = nSym > 17 ? array.get(nms, 17) : ''
 px18 = request.security(id18, useTf, close, ignore_invalid_symbol=true, calc_bars_count=500)
 on18 = nSym > 17 and not na(px18)
-rsLine18 = on18 ? calcRS(px18, bmPx) : na
+_rsRaw18 = calcRS(px18, bmPx)
+rsLine18 = on18 ? _rsRaw18 : na
 rs0_18 = on18 ? rsLine18 : na
 rs1_18 = on18 ? rsLine18[rsLb1] : na
 rs2_18 = on18 ? rsLine18[rsLb2] : na
@@ -768,7 +786,8 @@ id19 = nSym > 18 ? array.get(ids, 18) : dummyId
 nm19 = nSym > 18 ? array.get(nms, 18) : ''
 px19 = request.security(id19, useTf, close, ignore_invalid_symbol=true, calc_bars_count=500)
 on19 = nSym > 18 and not na(px19)
-rsLine19 = on19 ? calcRS(px19, bmPx) : na
+_rsRaw19 = calcRS(px19, bmPx)
+rsLine19 = on19 ? _rsRaw19 : na
 rs0_19 = on19 ? rsLine19 : na
 rs1_19 = on19 ? rsLine19[rsLb1] : na
 rs2_19 = on19 ? rsLine19[rsLb2] : na
@@ -778,7 +797,8 @@ id20 = nSym > 19 ? array.get(ids, 19) : dummyId
 nm20 = nSym > 19 ? array.get(nms, 19) : ''
 px20 = request.security(id20, useTf, close, ignore_invalid_symbol=true, calc_bars_count=500)
 on20 = nSym > 19 and not na(px20)
-rsLine20 = on20 ? calcRS(px20, bmPx) : na
+_rsRaw20 = calcRS(px20, bmPx)
+rsLine20 = on20 ? _rsRaw20 : na
 rs0_20 = on20 ? rsLine20 : na
 rs1_20 = on20 ? rsLine20[rsLb1] : na
 rs2_20 = on20 ? rsLine20[rsLb2] : na
