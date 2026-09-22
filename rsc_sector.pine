@@ -1,0 +1,1259 @@
+// This Pine Script(TM) code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+
+// RSC Sector - RS rank table for INDEX STOCKS1.xlsx constituents
+
+// Open on a stock or sector index (e.g. NSE:CNXAUTO / NSE:MARUTI) to see all names in that sector.
+
+// Stock lists are exactly the 12 sector blocks of INDEX STOCKS1.xlsx (168 names), no additions.
+
+//
+
+// Column formulas, all on the chart timeframe against the benchmark, period = 22:
+
+// RS(k) = ((close[k] / close[k + 22]) / (bench[k] / bench[k + 22]) - 1) * 100
+
+// RS-0 = RS(0) RS-1 = RS(1) RS-2 = RS(2)
+
+// %Change = stock only: week-over-week if chart TF <= D, month-over-month if chart TF >= W
+
+// Rank = descending RS-0 (first column)
+
+// Weightage = INDEX STOCKS1.xlsx Weightage* for that stock in this sector
+
+// Average = arithmetic mean of the RS columns over every listed name
+
+//@version=6
+
+indicator(title='RSC Sector', shorttitle='RSC Sector', overlay=false, precision=2, max_bars_back=1000)
+
+grpB = 'Benchmark Settings'
+
+defaultBType = input.string(defval='Auto Sector', title='Benchmark Type', group=grpB, options=['Auto Sector', 'Custom Benchmark'], tooltip='Auto Sector maps the benchmark to the sector of the chart symbol.')
+
+customBench = input.symbol('NSE:NIFTY', 'Custom Benchmark', group=grpB)
+
+flagARS = input.bool(defval=false, title='Use Anchored RS (ARS)', group=grpB)
+
+historyDateARS = input.time(timestamp('2024-09-26 00:00'), 'ARS Reference Date', group=grpB)
+
+fromDate = input.time(timestamp('2026-08-01 00:00'), 'From Date', group=grpB, tooltip='Hides plotted lines before this date. Example: 1 Aug shows 1 Aug to today only.')
+
+rsLen = input.int(22, 'RS Period', minval=1, group=grpB, tooltip='RS = ((stock / stock[period]) / (bench / bench[period]) - 1) * 100. Period is in chart bars.')
+
+rsLb1 = input.int(1, 'RS-1 bars back', minval=1, group=grpB, tooltip='RS-1 = RS one chart bar ago.')
+
+rsLb2 = input.int(2, 'RS-2 bars back', minval=1, group=grpB, tooltip='RS-2 = RS two chart bars ago.')
+
+grpV = 'View'
+
+viewMode = input.string('Auto', 'View Mode', options=['Auto', 'Sector Stocks', 'Compare Sectors', 'Nifty Stocks'], group=grpV, tooltip='Auto: NIFTY chart compares sectors. A stock or sector index chart lists all constituents of that sector.')
+
+showPlots = input.bool(true, 'Show RS Lines', group=grpV)
+
+showAbsolute = input.bool(false, 'Show Absolute? (%Change instead of RS line)', group=grpV)
+
+showBenchmark = input.bool(false, 'Show Benchmark? (zero line)', group=grpV)
+
+showDelta = input.bool(false, 'Show Delta? (RS minus group average)', group=grpV)
+
+rankBy = input.string('RS-0', 'Rank By', options=['RS-0', '%Change'], group=grpV)
+
+grpH = 'Highlight'
+
+hlMode = input.string('By Slot/Color (Trace specific stock)', 'Highlight Mode', options=['By Slot/Color (Trace specific stock)', 'By Rank (Track Top Performers)'], group=grpH, tooltip='By Slot highlights the Nth stock in the raw list (e.g., Slot 1 is always the highest-weighted stock). By Rank highlights whichever stock is currently rank N on that specific bar.')
+
+hlTargetStr = input.string('None', 'Highlight Target', options=['None', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20'], group=grpH)
+hlTarget = hlTargetStr == 'None' ? 0 : str.tonumber(hlTargetStr)
+
+grpT = 'Table'
+
+showTable = input.bool(true, 'Show Table', group=grpT)
+
+tblPos = input.string('Top Right', 'Table Position', options=['Top Right', 'Middle Right', 'Bottom Right', 'Top Left'], group=grpT)
+
+tblSize = input.string('Small', 'Table Text Size', options=['Tiny', 'Small', 'Normal'], group=grpT)
+
+grpC = 'Cell Colors'
+
+colRsHi = input.color(#1a237e, 'RS strongest of the three', group=grpC, tooltip='Background for whichever of RS-0 / RS-1 / RS-2 is highest in that row.')
+
+colRsMid = input.color(#1976d2, 'RS middle of the three', group=grpC)
+
+colRsLo = input.color(#4dd0e1, 'RS weakest of the three', group=grpC)
+
+colUp = input.color(#43a047, '%Change positive', group=grpC)
+
+colDown = input.color(#e53935, '%Change negative', group=grpC)
+
+colRankTop = input.color(#2e7d32, 'Rank best', group=grpC, tooltip='Rank column fades from this colour at rank 1 to the worst-rank colour at the bottom.')
+
+colRankBot = input.color(#c62828, 'Rank worst', group=grpC)
+
+colBlank = input.color(#111111, 'No data', group=grpC)
+
+dummyId = 'NSE:NIFTY'
+
+inRange = time >= fromDate
+
+useTf = timeframe.period
+
+weekPctMode = timeframe.in_seconds() < timeframe.in_seconds('W')
+
+normTicker(string id) =>
+    t = str.replace_all(id, 'NSE:', '')
+    t := str.replace_all(t, 'BSE:', '')
+    str.replace_all(t, ':', '')
+
+var map<string, string> sectorOfStock = map.new<string, string>()
+
+if bar_index == 0
+    sectorOfStock.put('ABB', 'CNXENERGY')
+    sectorOfStock.put('ABBOTINDIA', 'CNXPHARMA')
+    sectorOfStock.put('ADANIENSOL', 'CNXENERGY')
+    sectorOfStock.put('ADANIENT', 'CNXMETAL')
+    sectorOfStock.put('ADANIGREEN', 'CNXENERGY')
+    sectorOfStock.put('ADANIPOWER', 'CNXENERGY')
+    sectorOfStock.put('AEGISLOG', 'NIFTY_OIL_AND_GAS')
+    sectorOfStock.put('AEGISVOPAK', 'NIFTY_OIL_AND_GAS')
+    sectorOfStock.put('ALKEM', 'CNXPHARMA')
+    sectorOfStock.put('AMBER', 'NIFTY_CONSR_DURBL')
+    sectorOfStock.put('APLAPOLLO', 'CNXMETAL')
+    sectorOfStock.put('APOLLOHOSP', 'CNXPHARMA')
+    sectorOfStock.put('ASHOKLEY', 'CNXAUTO')
+    sectorOfStock.put('ATGL', 'NIFTY_OIL_AND_GAS')
+    sectorOfStock.put('AUBANK', 'BANKNIFTY')
+    sectorOfStock.put('AUROPHARMA', 'CNXPHARMA')
+    sectorOfStock.put('AXISBANK', 'BANKNIFTY')
+    sectorOfStock.put('BAJAJ_AUTO', 'CNXAUTO')
+    sectorOfStock.put('BAJAJFINSV', 'CNXFINANCE')
+    sectorOfStock.put('BAJFINANCE', 'CNXFINANCE')
+    sectorOfStock.put('BANKBARODA', 'CNXPSUBANK')
+    sectorOfStock.put('BANKINDIA', 'CNXPSUBANK')
+    sectorOfStock.put('BATAINDIA', 'NIFTY_CONSR_DURBL')
+    sectorOfStock.put('BEL', 'CNXPSE')
+    sectorOfStock.put('BHARATFORG', 'CNXAUTO')
+    sectorOfStock.put('BHEL', 'CNXENERGY')
+    sectorOfStock.put('BIOCON', 'CNXPHARMA')
+    sectorOfStock.put('BLUESTARCO', 'NIFTY_CONSR_DURBL')
+    sectorOfStock.put('BOSCHLTD', 'CNXAUTO')
+    sectorOfStock.put('BPCL', 'NIFTY_OIL_AND_GAS')
+    sectorOfStock.put('BRITANNIA', 'CNXFMCG')
+    sectorOfStock.put('BSE', 'CNXFINANCE')
+    sectorOfStock.put('CANBK', 'CNXPSUBANK')
+    sectorOfStock.put('CASTROLIND', 'NIFTY_OIL_AND_GAS')
+    sectorOfStock.put('CENTRALBK', 'CNXPSUBANK')
+    sectorOfStock.put('CGPOWER', 'CNXENERGY')
+    sectorOfStock.put('CHENNPETRO', 'NIFTY_OIL_AND_GAS')
+    sectorOfStock.put('CHOLAFIN', 'CNXFINANCE')
+    sectorOfStock.put('CIPLA', 'CNXPHARMA')
+    sectorOfStock.put('COALINDIA', 'CNXENERGY')
+    sectorOfStock.put('COFORGE', 'CNXIT')
+    sectorOfStock.put('COLPAL', 'CNXFMCG')
+    sectorOfStock.put('CROMPTON', 'NIFTY_CONSR_DURBL')
+    sectorOfStock.put('DABUR', 'CNXFMCG')
+    sectorOfStock.put('DIVISLAB', 'CNXPHARMA')
+    sectorOfStock.put('DIXON', 'NIFTY_CONSR_DURBL')
+    sectorOfStock.put('DRREDDY', 'CNXPHARMA')
+    sectorOfStock.put('EICHERMOT', 'CNXAUTO')
+    sectorOfStock.put('EMAMILTD', 'CNXFMCG')
+    sectorOfStock.put('EXIDEIND', 'CNXAUTO')
+    sectorOfStock.put('FEDERALBNK', 'BANKNIFTY')
+    sectorOfStock.put('FORTIS', 'CNXPHARMA')
+    sectorOfStock.put('GAIL', 'NIFTY_OIL_AND_GAS')
+    sectorOfStock.put('GLENMARK', 'CNXPHARMA')
+    sectorOfStock.put('GODREJCP', 'CNXFMCG')
+    sectorOfStock.put('HAL', 'CNXPSE')
+    sectorOfStock.put('HAVELLS', 'NIFTY_CONSR_DURBL')
+    sectorOfStock.put('HCLTECH', 'CNXIT')
+    sectorOfStock.put('HDFCBANK', 'BANKNIFTY')
+    sectorOfStock.put('HDFCLIFE', 'CNXFINANCE')
+    sectorOfStock.put('HEROMOTOCO', 'CNXAUTO')
+    sectorOfStock.put('HINDALCO', 'CNXMETAL')
+    sectorOfStock.put('HINDCOPPER', 'CNXMETAL')
+    sectorOfStock.put('HINDPETRO', 'NIFTY_OIL_AND_GAS')
+    sectorOfStock.put('HINDUNILVR', 'CNXFMCG')
+    sectorOfStock.put('HINDZINC', 'CNXMETAL')
+    sectorOfStock.put('ICICIBANK', 'BANKNIFTY')
+    sectorOfStock.put('IDFCFIRSTB', 'BANKNIFTY')
+    sectorOfStock.put('IGL', 'NIFTY_OIL_AND_GAS')
+    sectorOfStock.put('INDIANB', 'CNXPSUBANK')
+    sectorOfStock.put('INDUSINDBK', 'BANKNIFTY')
+    sectorOfStock.put('INFY', 'CNXIT')
+    sectorOfStock.put('IOB', 'CNXPSUBANK')
+    sectorOfStock.put('IOC', 'NIFTY_OIL_AND_GAS')
+    sectorOfStock.put('IPCALAB', 'CNXPHARMA')
+    sectorOfStock.put('IRFC', 'CNXPSE')
+    sectorOfStock.put('ITC', 'CNXFMCG')
+    sectorOfStock.put('JINDALSTEL', 'CNXMETAL')
+    sectorOfStock.put('JIOFIN', 'CNXFINANCE')
+    sectorOfStock.put('JSL', 'CNXMETAL')
+    sectorOfStock.put('JSWSTEEL', 'CNXMETAL')
+    sectorOfStock.put('KAJARIACER', 'NIFTY_CONSR_DURBL')
+    sectorOfStock.put('KALYANKJIL', 'NIFTY_CONSR_DURBL')
+    sectorOfStock.put('KOTAKBANK', 'BANKNIFTY')
+    sectorOfStock.put('LAURUSLABS', 'CNXPHARMA')
+    sectorOfStock.put('LLOYDSME', 'CNXMETAL')
+    sectorOfStock.put('LTM', 'CNXIT')
+    sectorOfStock.put('LUPIN', 'CNXPHARMA')
+    sectorOfStock.put('M&M', 'CNXAUTO')
+    sectorOfStock.put('M_M', 'CNXAUTO')
+    sectorOfStock.put('MAHABANK', 'CNXPSUBANK')
+    sectorOfStock.put('MANKIND', 'CNXPHARMA')
+    sectorOfStock.put('MARICO', 'CNXFMCG')
+    sectorOfStock.put('MARUTI', 'CNXAUTO')
+    sectorOfStock.put('MAXHEALTH', 'CNXPHARMA')
+    sectorOfStock.put('MOTHERSON', 'CNXAUTO')
+    sectorOfStock.put('MPHASIS', 'CNXIT')
+    sectorOfStock.put('MUTHOOTFIN', 'CNXFINANCE')
+    sectorOfStock.put('NATIONALUM', 'CNXMETAL')
+    sectorOfStock.put('NMDC', 'CNXMETAL')
+    sectorOfStock.put('NTPC', 'CNXENERGY')
+    sectorOfStock.put('OFSS', 'CNXIT')
+    sectorOfStock.put('OIL', 'NIFTY_OIL_AND_GAS')
+    sectorOfStock.put('ONGC', 'NIFTY_OIL_AND_GAS')
+    sectorOfStock.put('PATANJALI', 'CNXFMCG')
+    sectorOfStock.put('PERSISTENT', 'CNXIT')
+    sectorOfStock.put('PETRONET', 'NIFTY_OIL_AND_GAS')
+    sectorOfStock.put('PFC', 'CNXFINANCE')
+    sectorOfStock.put('PGEL', 'NIFTY_CONSR_DURBL')
+    sectorOfStock.put('PNB', 'CNXPSUBANK')
+    sectorOfStock.put('POWERGRID', 'CNXENERGY')
+    sectorOfStock.put('POWERINDIA', 'CNXENERGY')
+    sectorOfStock.put('PPLPHARMA', 'CNXPHARMA')
+    sectorOfStock.put('PSB', 'CNXPSUBANK')
+    sectorOfStock.put('RADICO', 'CNXFMCG')
+    sectorOfStock.put('RECLTD', 'CNXPSE')
+    sectorOfStock.put('RELIANCE', 'NIFTY_OIL_AND_GAS')
+    sectorOfStock.put('SAIL', 'CNXMETAL')
+    sectorOfStock.put('SBILIFE', 'CNXFINANCE')
+    sectorOfStock.put('SBIN', 'CNXPSUBANK')
+    sectorOfStock.put('SHRIRAMFIN', 'CNXFINANCE')
+    sectorOfStock.put('SIEMENS', 'CNXENERGY')
+    sectorOfStock.put('SONACOMS', 'CNXAUTO')
+    sectorOfStock.put('SUNPHARMA', 'CNXPHARMA')
+    sectorOfStock.put('TATACONSUM', 'CNXFMCG')
+    sectorOfStock.put('TATASTEEL', 'CNXMETAL')
+    sectorOfStock.put('TCS', 'CNXIT')
+    sectorOfStock.put('TECHM', 'CNXIT')
+    sectorOfStock.put('TIINDIA', 'CNXAUTO')
+    sectorOfStock.put('TITAN', 'NIFTY_CONSR_DURBL')
+    sectorOfStock.put('TMPV', 'CNXAUTO')
+    sectorOfStock.put('TORNTPHARM', 'CNXPHARMA')
+    sectorOfStock.put('TVSMOTOR', 'CNXAUTO')
+    sectorOfStock.put('UBL', 'CNXFMCG')
+    sectorOfStock.put('UCOBANK', 'CNXPSUBANK')
+    sectorOfStock.put('UNIONBANK', 'CNXPSUBANK')
+    sectorOfStock.put('UNITDSPR', 'CNXFMCG')
+    sectorOfStock.put('UNOMINDA', 'CNXAUTO')
+    sectorOfStock.put('VBL', 'CNXFMCG')
+    sectorOfStock.put('VEDL', 'CNXMETAL')
+    sectorOfStock.put('VOLTAS', 'NIFTY_CONSR_DURBL')
+    sectorOfStock.put('WHIRLPOOL', 'NIFTY_CONSR_DURBL')
+    sectorOfStock.put('WIPRO', 'CNXIT')
+    sectorOfStock.put('YESBANK', 'BANKNIFTY')
+    sectorOfStock.put('ZYDUSLIFE', 'CNXPHARMA')
+
+    // Sector index charts resolve to their own constituent list.
+    sectorOfStock.put('CNXAUTO', 'CNXAUTO')
+    sectorOfStock.put('NIFTY_CONSR_DURBL', 'NIFTY_CONSR_DURBL')
+    sectorOfStock.put('CNXIT', 'CNXIT')
+    sectorOfStock.put('CNXPHARMA', 'CNXPHARMA')
+    sectorOfStock.put('CNXFMCG', 'CNXFMCG')
+    sectorOfStock.put('CNXMETAL', 'CNXMETAL')
+    sectorOfStock.put('CNXPSUBANK', 'CNXPSUBANK')
+    sectorOfStock.put('BANKNIFTY', 'BANKNIFTY')
+    sectorOfStock.put('CNXFINANCE', 'CNXFINANCE')
+    sectorOfStock.put('NIFTY_OIL_AND_GAS', 'NIFTY_OIL_AND_GAS')
+    sectorOfStock.put('CNXENERGY', 'CNXENERGY')
+    sectorOfStock.put('CNXPSE', 'CNXPSE')
+    sectorOfStock.put('NIFTY', 'SECTORS')
+    sectorOfStock.put('NIFTY50', 'SECTORS')
+    sectorOfStock.put('CNX500', 'SECTORS')
+    sectorOfStock.put('NIFTYJR', 'SECTORS')
+
+resolveSector() =>
+    t = normTicker(syminfo.tickerid)
+    string key = sectorOfStock.get(t)
+    if na(key)
+        key := sectorOfStock.get(str.replace_all(t, '_', '&'))
+    if na(key)
+        key := sectorOfStock.get(str.replace_all(t, '_', '-'))
+    if na(key)
+        key := sectorOfStock.get(str.replace_all(t, '-', '_'))
+
+    if viewMode == 'Nifty Stocks'
+        key := 'NIFTY_STOCKS'
+    else if viewMode == 'Compare Sectors'
+        key := 'SECTORS'
+    else if viewMode == 'Sector Stocks' and (na(key) or key == 'SECTORS')
+        key := 'CNXAUTO'
+    else if na(key)
+        key := 'SECTORS'
+    key
+
+loadSector(string sectorKey, string[] ids, string[] nms, float[] wts) =>
+    // Lists mirror INDEX STOCKS1.xlsx exactly, in the sheet descending-weightage order.
+    array.clear(ids)
+    array.clear(nms)
+    array.clear(wts)
+
+    if sectorKey == 'NIFTY_STOCKS'
+        array.push(ids, 'NSE:HDFCBANK'), array.push(nms, 'HDFCBANK'), array.push(wts, 11.0)
+        array.push(ids, 'NSE:RELIANCE'), array.push(nms, 'RELIANCE'), array.push(wts, 9.5)
+        array.push(ids, 'NSE:ICICIBANK'), array.push(nms, 'ICICIBANK'), array.push(wts, 8.0)
+        array.push(ids, 'NSE:INFY'), array.push(nms, 'INFY'), array.push(wts, 6.0)
+        array.push(ids, 'NSE:ITC'), array.push(nms, 'ITC'), array.push(wts, 4.5)
+        array.push(ids, 'NSE:TCS'), array.push(nms, 'TCS'), array.push(wts, 4.0)
+        array.push(ids, 'NSE:LT'), array.push(nms, 'LT'), array.push(wts, 3.8)
+        array.push(ids, 'NSE:AXISBANK'), array.push(nms, 'AXISBANK'), array.push(wts, 3.5)
+        array.push(ids, 'NSE:KOTAKBANK'), array.push(nms, 'KOTAKBANK'), array.push(wts, 3.0)
+        array.push(ids, 'NSE:BHARTIARTL'), array.push(nms, 'BHARTIARTL'), array.push(wts, 2.8)
+        array.push(ids, 'NSE:SBIN'), array.push(nms, 'SBIN'), array.push(wts, 2.7)
+        array.push(ids, 'NSE:HINDUNILVR'), array.push(nms, 'HINDUNILVR'), array.push(wts, 2.5)
+        array.push(ids, 'NSE:BAJFINANCE'), array.push(nms, 'BAJFINANCE'), array.push(wts, 2.2)
+        array.push(ids, 'NSE:M&M'), array.push(nms, 'M_M'), array.push(wts, 2.0)
+        array.push(ids, 'NSE:MARUTI'), array.push(nms, 'MARUTI'), array.push(wts, 1.8)
+        array.push(ids, 'NSE:ASIANPAINT'), array.push(nms, 'ASIANPAINT'), array.push(wts, 1.7)
+        array.push(ids, 'NSE:HCLTECH'), array.push(nms, 'HCLTECH'), array.push(wts, 1.6)
+        array.push(ids, 'NSE:SUNPHARMA'), array.push(nms, 'SUNPHARMA'), array.push(wts, 1.5)
+        array.push(ids, 'NSE:TITAN'), array.push(nms, 'TITAN'), array.push(wts, 1.4)
+        array.push(ids, 'NSE:TATAMOTORS'), array.push(nms, 'TATAMOTORS'), array.push(wts, 1.3)
+    else if sectorKey == 'CNXAUTO'
+        array.push(ids, 'NSE:MARUTI'), array.push(nms, 'MARUTI'), array.push(wts, 16.87)
+        array.push(ids, 'NSE:M&M'), array.push(nms, 'M_M'), array.push(wts, 16.55)
+        array.push(ids, 'NSE:BAJAJ_AUTO'), array.push(nms, 'BAJAJ_AUTO'), array.push(wts, 12.44)
+        array.push(ids, 'NSE:EICHERMOT'), array.push(nms, 'EICHERMOT'), array.push(wts, 8.63)
+        array.push(ids, 'NSE:TVSMOTOR'), array.push(nms, 'TVSMOTOR'), array.push(wts, 7.95)
+        array.push(ids, 'NSE:MOTHERSON'), array.push(nms, 'MOTHERSON'), array.push(wts, 6.87)
+        array.push(ids, 'NSE:BOSCHLTD'), array.push(nms, 'BOSCHLTD'), array.push(wts, 5.37)
+        array.push(ids, 'NSE:TMPV'), array.push(nms, 'TMPV'), array.push(wts, 4.76)
+        array.push(ids, 'NSE:HEROMOTOCO'), array.push(nms, 'HEROMOTOCO'), array.push(wts, 4.49)
+        array.push(ids, 'NSE:ASHOKLEY'), array.push(nms, 'ASHOKLEY'), array.push(wts, 3.91)
+        array.push(ids, 'NSE:BHARATFORG'), array.push(nms, 'BHARATFORG'), array.push(wts, 3.84)
+        array.push(ids, 'NSE:UNOMINDA'), array.push(nms, 'UNOMINDA'), array.push(wts, 2.77)
+        array.push(ids, 'NSE:TIINDIA'), array.push(nms, 'TIINDIA'), array.push(wts, 2.05)
+        array.push(ids, 'NSE:SONACOMS'), array.push(nms, 'SONACOMS'), array.push(wts, 1.91)
+        array.push(ids, 'NSE:EXIDEIND'), array.push(nms, 'EXIDEIND'), array.push(wts, 1.56)
+    else if sectorKey == 'NIFTY_CONSR_DURBL'
+        array.push(ids, 'NSE:TITAN'), array.push(nms, 'TITAN'), array.push(wts, 52.78)
+        array.push(ids, 'NSE:DIXON'), array.push(nms, 'DIXON'), array.push(wts, 10.12)
+        array.push(ids, 'NSE:HAVELLS'), array.push(nms, 'HAVELLS'), array.push(wts, 9.54)
+        array.push(ids, 'NSE:KALYANKJIL'), array.push(nms, 'KALYANKJIL'), array.push(wts, 7.35)
+        array.push(ids, 'NSE:VOLTAS'), array.push(nms, 'VOLTAS'), array.push(wts, 5.13)
+        array.push(ids, 'NSE:BLUESTARCO'), array.push(nms, 'BLUESTARCO'), array.push(wts, 3.63)
+        array.push(ids, 'NSE:AMBER'), array.push(nms, 'AMBER'), array.push(wts, 2.98)
+        array.push(ids, 'NSE:KAJARIACER'), array.push(nms, 'KAJARIACER'), array.push(wts, 2.30)
+        array.push(ids, 'NSE:PGEL'), array.push(nms, 'PGEL'), array.push(wts, 2.02)
+        array.push(ids, 'NSE:CROMPTON'), array.push(nms, 'CROMPTON'), array.push(wts, 1.85)
+        array.push(ids, 'NSE:WHIRLPOOL'), array.push(nms, 'WHIRLPOOL'), array.push(wts, 1.16)
+        array.push(ids, 'NSE:BATAINDIA'), array.push(nms, 'BATAINDIA'), array.push(wts, 1.14)
+    else if sectorKey == 'CNXIT'
+        array.push(ids, 'NSE:TCS'), array.push(nms, 'TCS'), array.push(wts, 34.15)
+        array.push(ids, 'NSE:INFY'), array.push(nms, 'INFY'), array.push(wts, 18.98)
+        array.push(ids, 'NSE:HCLTECH'), array.push(nms, 'HCLTECH'), array.push(wts, 14.77)
+        array.push(ids, 'NSE:WIPRO'), array.push(nms, 'WIPRO'), array.push(wts, 7.28)
+        array.push(ids, 'NSE:TECHM'), array.push(nms, 'TECHM'), array.push(wts, 6.41)
+        array.push(ids, 'NSE:LTM'), array.push(nms, 'LTM'), array.push(wts, 5.61)
+        array.push(ids, 'NSE:OFSS'), array.push(nms, 'OFSS'), array.push(wts, 4.09)
+        array.push(ids, 'NSE:PERSISTENT'), array.push(nms, 'PERSISTENT'), array.push(wts, 3.52)
+        array.push(ids, 'NSE:COFORGE'), array.push(nms, 'COFORGE'), array.push(wts, 3.23)
+        array.push(ids, 'NSE:MPHASIS'), array.push(nms, 'MPHASIS'), array.push(wts, 1.96)
+    else if sectorKey == 'CNXPHARMA'
+        array.push(ids, 'NSE:SUNPHARMA'), array.push(nms, 'SUNPHARMA'), array.push(wts, 22.18)
+        array.push(ids, 'NSE:DIVISLAB'), array.push(nms, 'DIVISLAB'), array.push(wts, 10.83)
+        array.push(ids, 'NSE:TORNTPHARM'), array.push(nms, 'TORNTPHARM'), array.push(wts, 8.84)
+        array.push(ids, 'NSE:CIPLA'), array.push(nms, 'CIPLA'), array.push(wts, 5.62)
+        array.push(ids, 'NSE:ZYDUSLIFE'), array.push(nms, 'ZYDUSLIFE'), array.push(wts, 5.46)
+        array.push(ids, 'NSE:LUPIN'), array.push(nms, 'LUPIN'), array.push(wts, 4.91)
+        array.push(ids, 'NSE:DRREDDY'), array.push(nms, 'DRREDDY'), array.push(wts, 4.82)
+        array.push(ids, 'NSE:MANKIND'), array.push(nms, 'MANKIND'), array.push(wts, 4.80)
+        array.push(ids, 'NSE:LAURUSLABS'), array.push(nms, 'LAURUSLABS'), array.push(wts, 4.71)
+        array.push(ids, 'NSE:AUROPHARMA'), array.push(nms, 'AUROPHARMA'), array.push(wts, 4.58)
+        array.push(ids, 'NSE:BIOCON'), array.push(nms, 'BIOCON'), array.push(wts, 3.25)
+        array.push(ids, 'NSE:GLENMARK'), array.push(nms, 'GLENMARK'), array.push(wts, 3.17)
+        array.push(ids, 'NSE:ALKEM'), array.push(nms, 'ALKEM'), array.push(wts, 3.10)
+        array.push(ids, 'NSE:ABBOTINDIA'), array.push(nms, 'ABBOTINDIA'), array.push(wts, 2.76)
+        array.push(ids, 'NSE:APOLLOHOSP'), array.push(nms, 'APOLLOHOSP'), array.push(wts, 5.73)
+        array.push(ids, 'NSE:MAXHEALTH'), array.push(nms, 'MAXHEALTH'), array.push(wts, 4.39)
+        array.push(ids, 'NSE:FORTIS'), array.push(nms, 'FORTIS'), array.push(wts, 3.15)
+        array.push(ids, 'NSE:IPCALAB'), array.push(nms, 'IPCALAB'), array.push(wts, 1.96)
+        array.push(ids, 'NSE:PPLPHARMA'), array.push(nms, 'PPLPHARMA'), array.push(wts, 1.23)
+    else if sectorKey == 'CNXFMCG'
+        array.push(ids, 'NSE:HINDUNILVR'), array.push(nms, 'HINDUNILVR'), array.push(wts, 26.87)
+        array.push(ids, 'NSE:ITC'), array.push(nms, 'ITC'), array.push(wts, 19.04)
+        array.push(ids, 'NSE:VBL'), array.push(nms, 'VBL'), array.push(wts, 8.08)
+        array.push(ids, 'NSE:BRITANNIA'), array.push(nms, 'BRITANNIA'), array.push(wts, 7.32)
+        array.push(ids, 'NSE:MARICO'), array.push(nms, 'MARICO'), array.push(wts, 6.16)
+        array.push(ids, 'NSE:UNITDSPR'), array.push(nms, 'UNITDSPR'), array.push(wts, 6.05)
+        array.push(ids, 'NSE:TATACONSUM'), array.push(nms, 'TATACONSUM'), array.push(wts, 5.86)
+        array.push(ids, 'NSE:GODREJCP'), array.push(nms, 'GODREJCP'), array.push(wts, 5.24)
+        array.push(ids, 'NSE:DABUR'), array.push(nms, 'DABUR'), array.push(wts, 3.96)
+        array.push(ids, 'NSE:RADICO'), array.push(nms, 'RADICO'), array.push(wts, 3.41)
+        array.push(ids, 'NSE:COLPAL'), array.push(nms, 'COLPAL'), array.push(wts, 2.95)
+        array.push(ids, 'NSE:PATANJALI'), array.push(nms, 'PATANJALI'), array.push(wts, 2.10)
+        array.push(ids, 'NSE:UBL'), array.push(nms, 'UBL'), array.push(wts, 1.99)
+        array.push(ids, 'NSE:EMAMILTD'), array.push(nms, 'EMAMILTD'), array.push(wts, 0.96)
+    else if sectorKey == 'CNXMETAL'
+        array.push(ids, 'NSE:ADANIENT'), array.push(nms, 'ADANIENT'), array.push(wts, 18.89)
+        array.push(ids, 'NSE:JSWSTEEL'), array.push(nms, 'JSWSTEEL'), array.push(wts, 14.22)
+        array.push(ids, 'NSE:HINDZINC'), array.push(nms, 'HINDZINC'), array.push(wts, 10.90)
+        array.push(ids, 'NSE:HINDALCO'), array.push(nms, 'HINDALCO'), array.push(wts, 10.67)
+        array.push(ids, 'NSE:TATASTEEL'), array.push(nms, 'TATASTEEL'), array.push(wts, 10.51)
+        array.push(ids, 'NSE:JINDALSTEL'), array.push(nms, 'JINDALSTEL'), array.push(wts, 5.15)
+        array.push(ids, 'NSE:LLOYDSME'), array.push(nms, 'LLOYDSME'), array.push(wts, 4.96)
+        array.push(ids, 'NSE:VEDL'), array.push(nms, 'VEDL'), array.push(wts, 4.84)
+        array.push(ids, 'NSE:NMDC'), array.push(nms, 'NMDC'), array.push(wts, 3.41)
+        array.push(ids, 'NSE:SAIL'), array.push(nms, 'SAIL'), array.push(wts, 3.21)
+        array.push(ids, 'NSE:NATIONALUM'), array.push(nms, 'NATIONALUM'), array.push(wts, 3.17)
+        array.push(ids, 'NSE:JSL'), array.push(nms, 'JSL'), array.push(wts, 2.79)
+        array.push(ids, 'NSE:APLAPOLLO'), array.push(nms, 'APLAPOLLO'), array.push(wts, 2.67)
+        array.push(ids, 'NSE:HINDCOPPER'), array.push(nms, 'HINDCOPPER'), array.push(wts, 2.35)
+    else if sectorKey == 'CNXPSUBANK'
+        array.push(ids, 'NSE:SBIN'), array.push(nms, 'SBIN'), array.push(wts, 51.84)
+        array.push(ids, 'NSE:UNIONBANK'), array.push(nms, 'UNIONBANK'), array.push(wts, 7.51)
+        array.push(ids, 'NSE:PNB'), array.push(nms, 'PNB'), array.push(wts, 7.10)
+        array.push(ids, 'NSE:BANKBARODA'), array.push(nms, 'BANKBARODA'), array.push(wts, 6.75)
+        array.push(ids, 'NSE:INDIANB'), array.push(nms, 'INDIANB'), array.push(wts, 6.37)
+        array.push(ids, 'NSE:CANBK'), array.push(nms, 'CANBK'), array.push(wts, 6.26)
+        array.push(ids, 'NSE:BANKINDIA'), array.push(nms, 'BANKINDIA'), array.push(wts, 3.44)
+        array.push(ids, 'NSE:IOB'), array.push(nms, 'IOB'), array.push(wts, 3.40)
+        array.push(ids, 'NSE:MAHABANK'), array.push(nms, 'MAHABANK'), array.push(wts, 3.24)
+        array.push(ids, 'NSE:UCOBANK'), array.push(nms, 'UCOBANK'), array.push(wts, 1.71)
+        array.push(ids, 'NSE:CENTRALBK'), array.push(nms, 'CENTRALBK'), array.push(wts, 1.49)
+        array.push(ids, 'NSE:PSB'), array.push(nms, 'PSB'), array.push(wts, 0.88)
+    else if sectorKey == 'BANKNIFTY'
+        array.push(ids, 'NSE:HDFCBANK'), array.push(nms, 'HDFCBANK'), array.push(wts, 23.29)
+        array.push(ids, 'NSE:ICICIBANK'), array.push(nms, 'ICICIBANK'), array.push(wts, 21.14)
+        array.push(ids, 'NSE:SBIN'), array.push(nms, 'SBIN'), array.push(wts, 20.48)
+        array.push(ids, 'NSE:KOTAKBANK'), array.push(nms, 'KOTAKBANK'), array.push(wts, 8.12)
+        array.push(ids, 'NSE:AXISBANK'), array.push(nms, 'AXISBANK'), array.push(wts, 7.87)
+        array.push(ids, 'NSE:UNIONBANK'), array.push(nms, 'UNIONBANK'), array.push(wts, 2.97)
+        array.push(ids, 'NSE:PNB'), array.push(nms, 'PNB'), array.push(wts, 2.81)
+        array.push(ids, 'NSE:BANKBARODA'), array.push(nms, 'BANKBARODA'), array.push(wts, 2.67)
+        array.push(ids, 'NSE:CANBK'), array.push(nms, 'CANBK'), array.push(wts, 2.47)
+        array.push(ids, 'NSE:FEDERALBNK'), array.push(nms, 'FEDERALBNK'), array.push(wts, 1.81)
+        array.push(ids, 'NSE:AUBANK'), array.push(nms, 'AUBANK'), array.push(wts, 1.69)
+        array.push(ids, 'NSE:INDUSINDBK'), array.push(nms, 'INDUSINDBK'), array.push(wts, 1.67)
+        array.push(ids, 'NSE:IDFCFIRSTB'), array.push(nms, 'IDFCFIRSTB'), array.push(wts, 1.53)
+        array.push(ids, 'NSE:YESBANK'), array.push(nms, 'YESBANK'), array.push(wts, 1.48)
+    else if sectorKey == 'CNXFINANCE'
+        array.push(ids, 'NSE:HDFCBANK'), array.push(nms, 'HDFCBANK'), array.push(wts, 17.31)
+        array.push(ids, 'NSE:ICICIBANK'), array.push(nms, 'ICICIBANK'), array.push(wts, 15.71)
+        array.push(ids, 'NSE:SBIN'), array.push(nms, 'SBIN'), array.push(wts, 15.22)
+        array.push(ids, 'NSE:BAJFINANCE'), array.push(nms, 'BAJFINANCE'), array.push(wts, 10.46)
+        array.push(ids, 'NSE:KOTAKBANK'), array.push(nms, 'KOTAKBANK'), array.push(wts, 6.04)
+        array.push(ids, 'NSE:AXISBANK'), array.push(nms, 'AXISBANK'), array.push(wts, 5.85)
+        array.push(ids, 'NSE:BAJAJFINSV'), array.push(nms, 'BAJAJFINSV'), array.push(wts, 5.02)
+        array.push(ids, 'NSE:SHRIRAMFIN'), array.push(nms, 'SHRIRAMFIN'), array.push(wts, 4.08)
+        array.push(ids, 'NSE:SBILIFE'), array.push(nms, 'SBILIFE'), array.push(wts, 2.80)
+        array.push(ids, 'NSE:JIOFIN'), array.push(nms, 'JIOFIN'), array.push(wts, 2.55)
+        array.push(ids, 'NSE:CHOLAFIN'), array.push(nms, 'CHOLAFIN'), array.push(wts, 2.51)
+        array.push(ids, 'NSE:BSE'), array.push(nms, 'BSE'), array.push(wts, 2.17)
+        array.push(ids, 'NSE:PFC'), array.push(nms, 'PFC'), array.push(wts, 1.92)
+        array.push(ids, 'NSE:HDFCLIFE'), array.push(nms, 'HDFCLIFE'), array.push(wts, 1.80)
+        array.push(ids, 'NSE:MUTHOOTFIN'), array.push(nms, 'MUTHOOTFIN'), array.push(wts, 1.00)
+    else if sectorKey == 'NIFTY_OIL_AND_GAS'
+        array.push(ids, 'NSE:RELIANCE'), array.push(nms, 'RELIANCE'), array.push(wts, 60.38)
+        array.push(ids, 'NSE:ONGC'), array.push(nms, 'ONGC'), array.push(wts, 10.14)
+        array.push(ids, 'NSE:IOC'), array.push(nms, 'IOC'), array.push(wts, 6.71)
+        array.push(ids, 'NSE:BPCL'), array.push(nms, 'BPCL'), array.push(wts, 4.71)
+        array.push(ids, 'NSE:GAIL'), array.push(nms, 'GAIL'), array.push(wts, 3.90)
+        array.push(ids, 'NSE:HINDPETRO'), array.push(nms, 'HINDPETRO'), array.push(wts, 2.71)
+        array.push(ids, 'NSE:OIL'), array.push(nms, 'OIL'), array.push(wts, 2.61)
+        array.push(ids, 'NSE:ATGL'), array.push(nms, 'ATGL'), array.push(wts, 2.45)
+        array.push(ids, 'NSE:AEGISLOG'), array.push(nms, 'AEGISLOG'), array.push(wts, 1.51)
+        array.push(ids, 'NSE:PETRONET'), array.push(nms, 'PETRONET'), array.push(wts, 1.44)
+        array.push(ids, 'NSE:AEGISVOPAK'), array.push(nms, 'AEGISVOPAK'), array.push(wts, 1.02)
+        array.push(ids, 'NSE:IGL'), array.push(nms, 'IGL'), array.push(wts, 0.72)
+        array.push(ids, 'NSE:CHENNPETRO'), array.push(nms, 'CHENNPETRO'), array.push(wts, 0.67)
+        array.push(ids, 'NSE:CASTROLIND'), array.push(nms, 'CASTROLIND'), array.push(wts, 0.63)
+    else if sectorKey == 'CNXENERGY'
+        array.push(ids, 'NSE:RELIANCE'), array.push(nms, 'RELIANCE'), array.push(wts, 29.10)
+        array.push(ids, 'NSE:ADANIPOWER'), array.push(nms, 'ADANIPOWER'), array.push(wts, 6.51)
+        array.push(ids, 'NSE:NTPC'), array.push(nms, 'NTPC'), array.push(wts, 5.44)
+        array.push(ids, 'NSE:ONGC'), array.push(nms, 'ONGC'), array.push(wts, 4.89)
+        array.push(ids, 'NSE:COALINDIA'), array.push(nms, 'COALINDIA'), array.push(wts, 4.14)
+        array.push(ids, 'NSE:POWERGRID'), array.push(nms, 'POWERGRID'), array.push(wts, 4.07)
+        array.push(ids, 'NSE:ADANIGREEN'), array.push(nms, 'ADANIGREEN'), array.push(wts, 3.64)
+        array.push(ids, 'NSE:ADANIENSOL'), array.push(nms, 'ADANIENSOL'), array.push(wts, 3.25)
+        array.push(ids, 'NSE:IOC'), array.push(nms, 'IOC'), array.push(wts, 3.24)
+        array.push(ids, 'NSE:ABB'), array.push(nms, 'ABB'), array.push(wts, 2.66)
+        array.push(ids, 'NSE:POWERINDIA'), array.push(nms, 'POWERINDIA'), array.push(wts, 2.61)
+        array.push(ids, 'NSE:BHEL'), array.push(nms, 'BHEL'), array.push(wts, 2.42)
+        array.push(ids, 'NSE:CGPOWER'), array.push(nms, 'CGPOWER'), array.push(wts, 2.31)
+        array.push(ids, 'NSE:SIEMENS'), array.push(nms, 'SIEMENS'), array.push(wts, 2.30)
+    else if sectorKey == 'CNXPSE'
+        array.push(ids, 'NSE:HAL'), array.push(nms, 'HAL'), array.push(wts, 10.75)
+        array.push(ids, 'NSE:NTPC'), array.push(nms, 'NTPC'), array.push(wts, 10.59)
+        array.push(ids, 'NSE:BEL'), array.push(nms, 'BEL'), array.push(wts, 9.61)
+        array.push(ids, 'NSE:ONGC'), array.push(nms, 'ONGC'), array.push(wts, 9.53)
+        array.push(ids, 'NSE:COALINDIA'), array.push(nms, 'COALINDIA'), array.push(wts, 8.06)
+        array.push(ids, 'NSE:POWERGRID'), array.push(nms, 'POWERGRID'), array.push(wts, 7.94)
+        array.push(ids, 'NSE:IOC'), array.push(nms, 'IOC'), array.push(wts, 6.31)
+        array.push(ids, 'NSE:BHEL'), array.push(nms, 'BHEL'), array.push(wts, 4.71)
+        array.push(ids, 'NSE:BPCL'), array.push(nms, 'BPCL'), array.push(wts, 4.42)
+        array.push(ids, 'NSE:PFC'), array.push(nms, 'PFC'), array.push(wts, 3.99)
+        array.push(ids, 'NSE:IRFC'), array.push(nms, 'IRFC'), array.push(wts, 3.67)
+        array.push(ids, 'NSE:GAIL'), array.push(nms, 'GAIL'), array.push(wts, 3.67)
+        array.push(ids, 'NSE:RECLTD'), array.push(nms, 'RECLTD'), array.push(wts, 2.83)
+        array.push(ids, 'NSE:HINDPETRO'), array.push(nms, 'HINDPETRO'), array.push(wts, 2.54)
+    else if sectorKey == 'SECTORS' or sectorKey == 'NIFTY_STOCKS'
+        array.push(ids, 'NSE:BANKNIFTY'), array.push(nms, 'BANKNIFTY'), array.push(wts, na)
+        array.push(ids, 'NSE:CNXFINANCE'), array.push(nms, 'FINANCE'), array.push(wts, na)
+        array.push(ids, 'NSE:CNXPSUBANK'), array.push(nms, 'PSU BANK'), array.push(wts, na)
+        array.push(ids, 'NSE:CNXMETAL'), array.push(nms, 'METAL'), array.push(wts, na)
+        array.push(ids, 'NSE:CNXFMCG'), array.push(nms, 'FMCG'), array.push(wts, na)
+        array.push(ids, 'NSE:CNXAUTO'), array.push(nms, 'AUTO'), array.push(wts, na)
+        array.push(ids, 'NSE:NIFTY_OIL_AND_GAS'), array.push(nms, 'OIL & GAS'), array.push(wts, na)
+        array.push(ids, 'NSE:CNXPSE'), array.push(nms, 'PSE'), array.push(wts, na)
+        array.push(ids, 'NSE:CNXIT'), array.push(nms, 'IT'), array.push(wts, na)
+        array.push(ids, 'NSE:CNXENERGY'), array.push(nms, 'ENERGY'), array.push(wts, na)
+        array.push(ids, 'NSE:CNXPHARMA'), array.push(nms, 'PHARMA'), array.push(wts, na)
+        array.push(ids, 'NSE:NIFTY_CONSR_DURBL'), array.push(nms, 'CONSUMER DUR.'), array.push(wts, na)
+    true
+
+var string[] ids = array.new_string()
+var string[] nms = array.new_string()
+var float[] wts = array.new_float()
+var string activeSector = na
+sectorKey = resolveSector()
+
+if bar_index == 0 or sectorKey != activeSector
+    loadSector(sectorKey, ids, nms, wts)
+    activeSector := sectorKey
+
+nSym = math.min(array.size(ids), 20)
+string finalBenchTicker = customBench
+
+if defaultBType == 'Auto Sector'
+    if sectorKey == 'SECTORS' or sectorKey == 'NIFTY_STOCKS'
+        finalBenchTicker := 'NSE:NIFTY'
+    else
+        finalBenchTicker := 'NSE:' + sectorKey
+
+bmPx = request.security(finalBenchTicker, useTf, close, ignore_invalid_symbol=true, calc_bars_count=500)
+
+swapStr(string[] arr, int i, int j) =>
+    string tmp = array.get(arr, i)
+    array.set(arr, i, array.get(arr, j))
+    array.set(arr, j, tmp)
+    true
+
+swapFlt(float[] arr, int i, int j) =>
+    float tmp = array.get(arr, i)
+    array.set(arr, i, array.get(arr, j))
+    array.set(arr, j, tmp)
+    true
+
+swapInt(int[] arr, int i, int j) =>
+    int tmp = array.get(arr, i)
+    array.set(arr, i, array.get(arr, j))
+    array.set(arr, j, tmp)
+    true
+
+swapClr(color[] arr, int i, int j) =>
+    color tmp = array.get(arr, i)
+    array.set(arr, i, array.get(arr, j))
+    array.set(arr, j, tmp)
+    true
+
+// Stock-only % change: last completed week on chart TF <= D, last completed month on TF >= W.
+pctChg(string sym) =>
+    string ptf = weekPctMode ? 'W' : 'M'
+    request.security(sym, ptf, (close / close[1] - 1.0) * 100.0, ignore_invalid_symbol=true, calc_bars_count=500)
+
+// Anchored RS calculation helper
+calcRS(float stockPx, float benchPx) =>
+    var float anchorStockPrice = na
+    var float anchorBenchPrice = na
+
+    bool isAnchorBar = time >= historyDateARS and time[1] < historyDateARS
+
+    if flagARS
+        if isAnchorBar
+            anchorStockPrice := stockPx
+            anchorBenchPrice := benchPx
+    else
+        anchorStockPrice := stockPx[rsLen]
+        anchorBenchPrice := benchPx[rsLen]
+
+    float ratioStock = stockPx / anchorStockPrice
+    float ratioBench = benchPx / anchorBenchPrice
+
+    float rs = ratioBench == 0 or na(ratioBench) or na(ratioStock) ? na : (ratioStock / ratioBench - 1.0) * 100.0
+    rs
+
+
+id1 = nSym > 0 ? array.get(ids, 0) : dummyId
+nm1 = nSym > 0 ? array.get(nms, 0) : ''
+px1 = request.security(id1, useTf, close, ignore_invalid_symbol=true, calc_bars_count=500)
+on1 = nSym > 0 and not na(px1)
+rsLine1 = on1 ? calcRS(px1, bmPx) : na
+rs0_1 = on1 ? rsLine1 : na
+rs1_1 = on1 ? rsLine1[rsLb1] : na
+rs2_1 = on1 ? rsLine1[rsLb2] : na
+pct1 = on1 ? pctChg(id1) : na
+
+id2 = nSym > 1 ? array.get(ids, 1) : dummyId
+nm2 = nSym > 1 ? array.get(nms, 1) : ''
+px2 = request.security(id2, useTf, close, ignore_invalid_symbol=true, calc_bars_count=500)
+on2 = nSym > 1 and not na(px2)
+rsLine2 = on2 ? calcRS(px2, bmPx) : na
+rs0_2 = on2 ? rsLine2 : na
+rs1_2 = on2 ? rsLine2[rsLb1] : na
+rs2_2 = on2 ? rsLine2[rsLb2] : na
+pct2 = on2 ? pctChg(id2) : na
+
+id3 = nSym > 2 ? array.get(ids, 2) : dummyId
+nm3 = nSym > 2 ? array.get(nms, 2) : ''
+px3 = request.security(id3, useTf, close, ignore_invalid_symbol=true, calc_bars_count=500)
+on3 = nSym > 2 and not na(px3)
+rsLine3 = on3 ? calcRS(px3, bmPx) : na
+rs0_3 = on3 ? rsLine3 : na
+rs1_3 = on3 ? rsLine3[rsLb1] : na
+rs2_3 = on3 ? rsLine3[rsLb2] : na
+pct3 = on3 ? pctChg(id3) : na
+
+id4 = nSym > 3 ? array.get(ids, 3) : dummyId
+nm4 = nSym > 3 ? array.get(nms, 3) : ''
+px4 = request.security(id4, useTf, close, ignore_invalid_symbol=true, calc_bars_count=500)
+on4 = nSym > 3 and not na(px4)
+rsLine4 = on4 ? calcRS(px4, bmPx) : na
+rs0_4 = on4 ? rsLine4 : na
+rs1_4 = on4 ? rsLine4[rsLb1] : na
+rs2_4 = on4 ? rsLine4[rsLb2] : na
+pct4 = on4 ? pctChg(id4) : na
+
+id5 = nSym > 4 ? array.get(ids, 4) : dummyId
+nm5 = nSym > 4 ? array.get(nms, 4) : ''
+px5 = request.security(id5, useTf, close, ignore_invalid_symbol=true, calc_bars_count=500)
+on5 = nSym > 4 and not na(px5)
+rsLine5 = on5 ? calcRS(px5, bmPx) : na
+rs0_5 = on5 ? rsLine5 : na
+rs1_5 = on5 ? rsLine5[rsLb1] : na
+rs2_5 = on5 ? rsLine5[rsLb2] : na
+pct5 = on5 ? pctChg(id5) : na
+
+id6 = nSym > 5 ? array.get(ids, 5) : dummyId
+nm6 = nSym > 5 ? array.get(nms, 5) : ''
+px6 = request.security(id6, useTf, close, ignore_invalid_symbol=true, calc_bars_count=500)
+on6 = nSym > 5 and not na(px6)
+rsLine6 = on6 ? calcRS(px6, bmPx) : na
+rs0_6 = on6 ? rsLine6 : na
+rs1_6 = on6 ? rsLine6[rsLb1] : na
+rs2_6 = on6 ? rsLine6[rsLb2] : na
+pct6 = on6 ? pctChg(id6) : na
+
+id7 = nSym > 6 ? array.get(ids, 6) : dummyId
+nm7 = nSym > 6 ? array.get(nms, 6) : ''
+px7 = request.security(id7, useTf, close, ignore_invalid_symbol=true, calc_bars_count=500)
+on7 = nSym > 6 and not na(px7)
+rsLine7 = on7 ? calcRS(px7, bmPx) : na
+rs0_7 = on7 ? rsLine7 : na
+rs1_7 = on7 ? rsLine7[rsLb1] : na
+rs2_7 = on7 ? rsLine7[rsLb2] : na
+pct7 = on7 ? pctChg(id7) : na
+
+id8 = nSym > 7 ? array.get(ids, 7) : dummyId
+nm8 = nSym > 7 ? array.get(nms, 7) : ''
+px8 = request.security(id8, useTf, close, ignore_invalid_symbol=true, calc_bars_count=500)
+on8 = nSym > 7 and not na(px8)
+rsLine8 = on8 ? calcRS(px8, bmPx) : na
+rs0_8 = on8 ? rsLine8 : na
+rs1_8 = on8 ? rsLine8[rsLb1] : na
+rs2_8 = on8 ? rsLine8[rsLb2] : na
+pct8 = on8 ? pctChg(id8) : na
+
+id9 = nSym > 8 ? array.get(ids, 8) : dummyId
+nm9 = nSym > 8 ? array.get(nms, 8) : ''
+px9 = request.security(id9, useTf, close, ignore_invalid_symbol=true, calc_bars_count=500)
+on9 = nSym > 8 and not na(px9)
+rsLine9 = on9 ? calcRS(px9, bmPx) : na
+rs0_9 = on9 ? rsLine9 : na
+rs1_9 = on9 ? rsLine9[rsLb1] : na
+rs2_9 = on9 ? rsLine9[rsLb2] : na
+pct9 = on9 ? pctChg(id9) : na
+
+id10 = nSym > 9 ? array.get(ids, 9) : dummyId
+nm10 = nSym > 9 ? array.get(nms, 9) : ''
+px10 = request.security(id10, useTf, close, ignore_invalid_symbol=true, calc_bars_count=500)
+on10 = nSym > 9 and not na(px10)
+rsLine10 = on10 ? calcRS(px10, bmPx) : na
+rs0_10 = on10 ? rsLine10 : na
+rs1_10 = on10 ? rsLine10[rsLb1] : na
+rs2_10 = on10 ? rsLine10[rsLb2] : na
+pct10 = on10 ? pctChg(id10) : na
+
+id11 = nSym > 10 ? array.get(ids, 10) : dummyId
+nm11 = nSym > 10 ? array.get(nms, 10) : ''
+px11 = request.security(id11, useTf, close, ignore_invalid_symbol=true, calc_bars_count=500)
+on11 = nSym > 10 and not na(px11)
+rsLine11 = on11 ? calcRS(px11, bmPx) : na
+rs0_11 = on11 ? rsLine11 : na
+rs1_11 = on11 ? rsLine11[rsLb1] : na
+rs2_11 = on11 ? rsLine11[rsLb2] : na
+pct11 = on11 ? pctChg(id11) : na
+
+id12 = nSym > 11 ? array.get(ids, 11) : dummyId
+nm12 = nSym > 11 ? array.get(nms, 11) : ''
+px12 = request.security(id12, useTf, close, ignore_invalid_symbol=true, calc_bars_count=500)
+on12 = nSym > 11 and not na(px12)
+rsLine12 = on12 ? calcRS(px12, bmPx) : na
+rs0_12 = on12 ? rsLine12 : na
+rs1_12 = on12 ? rsLine12[rsLb1] : na
+rs2_12 = on12 ? rsLine12[rsLb2] : na
+pct12 = on12 ? pctChg(id12) : na
+
+id13 = nSym > 12 ? array.get(ids, 12) : dummyId
+nm13 = nSym > 12 ? array.get(nms, 12) : ''
+px13 = request.security(id13, useTf, close, ignore_invalid_symbol=true, calc_bars_count=500)
+on13 = nSym > 12 and not na(px13)
+rsLine13 = on13 ? calcRS(px13, bmPx) : na
+rs0_13 = on13 ? rsLine13 : na
+rs1_13 = on13 ? rsLine13[rsLb1] : na
+rs2_13 = on13 ? rsLine13[rsLb2] : na
+pct13 = on13 ? pctChg(id13) : na
+
+id14 = nSym > 13 ? array.get(ids, 13) : dummyId
+nm14 = nSym > 13 ? array.get(nms, 13) : ''
+px14 = request.security(id14, useTf, close, ignore_invalid_symbol=true, calc_bars_count=500)
+on14 = nSym > 13 and not na(px14)
+rsLine14 = on14 ? calcRS(px14, bmPx) : na
+rs0_14 = on14 ? rsLine14 : na
+rs1_14 = on14 ? rsLine14[rsLb1] : na
+rs2_14 = on14 ? rsLine14[rsLb2] : na
+pct14 = on14 ? pctChg(id14) : na
+
+id15 = nSym > 14 ? array.get(ids, 14) : dummyId
+nm15 = nSym > 14 ? array.get(nms, 14) : ''
+px15 = request.security(id15, useTf, close, ignore_invalid_symbol=true, calc_bars_count=500)
+on15 = nSym > 14 and not na(px15)
+rsLine15 = on15 ? calcRS(px15, bmPx) : na
+rs0_15 = on15 ? rsLine15 : na
+rs1_15 = on15 ? rsLine15[rsLb1] : na
+rs2_15 = on15 ? rsLine15[rsLb2] : na
+pct15 = on15 ? pctChg(id15) : na
+
+id16 = nSym > 15 ? array.get(ids, 15) : dummyId
+nm16 = nSym > 15 ? array.get(nms, 15) : ''
+px16 = request.security(id16, useTf, close, ignore_invalid_symbol=true, calc_bars_count=500)
+on16 = nSym > 15 and not na(px16)
+rsLine16 = on16 ? calcRS(px16, bmPx) : na
+rs0_16 = on16 ? rsLine16 : na
+rs1_16 = on16 ? rsLine16[rsLb1] : na
+rs2_16 = on16 ? rsLine16[rsLb2] : na
+pct16 = on16 ? pctChg(id16) : na
+
+id17 = nSym > 16 ? array.get(ids, 16) : dummyId
+nm17 = nSym > 16 ? array.get(nms, 16) : ''
+px17 = request.security(id17, useTf, close, ignore_invalid_symbol=true, calc_bars_count=500)
+on17 = nSym > 16 and not na(px17)
+rsLine17 = on17 ? calcRS(px17, bmPx) : na
+rs0_17 = on17 ? rsLine17 : na
+rs1_17 = on17 ? rsLine17[rsLb1] : na
+rs2_17 = on17 ? rsLine17[rsLb2] : na
+pct17 = on17 ? pctChg(id17) : na
+
+id18 = nSym > 17 ? array.get(ids, 17) : dummyId
+nm18 = nSym > 17 ? array.get(nms, 17) : ''
+px18 = request.security(id18, useTf, close, ignore_invalid_symbol=true, calc_bars_count=500)
+on18 = nSym > 17 and not na(px18)
+rsLine18 = on18 ? calcRS(px18, bmPx) : na
+rs0_18 = on18 ? rsLine18 : na
+rs1_18 = on18 ? rsLine18[rsLb1] : na
+rs2_18 = on18 ? rsLine18[rsLb2] : na
+pct18 = on18 ? pctChg(id18) : na
+
+id19 = nSym > 18 ? array.get(ids, 18) : dummyId
+nm19 = nSym > 18 ? array.get(nms, 18) : ''
+px19 = request.security(id19, useTf, close, ignore_invalid_symbol=true, calc_bars_count=500)
+on19 = nSym > 18 and not na(px19)
+rsLine19 = on19 ? calcRS(px19, bmPx) : na
+rs0_19 = on19 ? rsLine19 : na
+rs1_19 = on19 ? rsLine19[rsLb1] : na
+rs2_19 = on19 ? rsLine19[rsLb2] : na
+pct19 = on19 ? pctChg(id19) : na
+
+id20 = nSym > 19 ? array.get(ids, 19) : dummyId
+nm20 = nSym > 19 ? array.get(nms, 19) : ''
+px20 = request.security(id20, useTf, close, ignore_invalid_symbol=true, calc_bars_count=500)
+on20 = nSym > 19 and not na(px20)
+rsLine20 = on20 ? calcRS(px20, bmPx) : na
+rs0_20 = on20 ? rsLine20 : na
+rs1_20 = on20 ? rsLine20[rsLb1] : na
+rs2_20 = on20 ? rsLine20[rsLb2] : na
+pct20 = on20 ? pctChg(id20) : na
+
+float sumRs = 0.0
+int cntRs = 0
+if on1
+    sumRs += nz(rsLine1)
+    cntRs += 1
+if on2
+    sumRs += nz(rsLine2)
+    cntRs += 1
+if on3
+    sumRs += nz(rsLine3)
+    cntRs += 1
+if on4
+    sumRs += nz(rsLine4)
+    cntRs += 1
+if on5
+    sumRs += nz(rsLine5)
+    cntRs += 1
+if on6
+    sumRs += nz(rsLine6)
+    cntRs += 1
+if on7
+    sumRs += nz(rsLine7)
+    cntRs += 1
+if on8
+    sumRs += nz(rsLine8)
+    cntRs += 1
+if on9
+    sumRs += nz(rsLine9)
+    cntRs += 1
+if on10
+    sumRs += nz(rsLine10)
+    cntRs += 1
+if on11
+    sumRs += nz(rsLine11)
+    cntRs += 1
+if on12
+    sumRs += nz(rsLine12)
+    cntRs += 1
+if on13
+    sumRs += nz(rsLine13)
+    cntRs += 1
+if on14
+    sumRs += nz(rsLine14)
+    cntRs += 1
+if on15
+    sumRs += nz(rsLine15)
+    cntRs += 1
+if on16
+    sumRs += nz(rsLine16)
+    cntRs += 1
+if on17
+    sumRs += nz(rsLine17)
+    cntRs += 1
+if on18
+    sumRs += nz(rsLine18)
+    cntRs += 1
+if on19
+    sumRs += nz(rsLine19)
+    cntRs += 1
+if on20
+    sumRs += nz(rsLine20)
+    cntRs += 1
+avgRs = cntRs > 0 ? sumRs / cntRs : na
+
+
+// Prepare lines
+v_1 = on1 ? (showAbsolute ? pct1 : showDelta ? rsLine1 - avgRs : rsLine1) : na
+v_2 = on2 ? (showAbsolute ? pct2 : showDelta ? rsLine2 - avgRs : rsLine2) : na
+v_3 = on3 ? (showAbsolute ? pct3 : showDelta ? rsLine3 - avgRs : rsLine3) : na
+v_4 = on4 ? (showAbsolute ? pct4 : showDelta ? rsLine4 - avgRs : rsLine4) : na
+v_5 = on5 ? (showAbsolute ? pct5 : showDelta ? rsLine5 - avgRs : rsLine5) : na
+v_6 = on6 ? (showAbsolute ? pct6 : showDelta ? rsLine6 - avgRs : rsLine6) : na
+v_7 = on7 ? (showAbsolute ? pct7 : showDelta ? rsLine7 - avgRs : rsLine7) : na
+v_8 = on8 ? (showAbsolute ? pct8 : showDelta ? rsLine8 - avgRs : rsLine8) : na
+v_9 = on9 ? (showAbsolute ? pct9 : showDelta ? rsLine9 - avgRs : rsLine9) : na
+v_10 = on10 ? (showAbsolute ? pct10 : showDelta ? rsLine10 - avgRs : rsLine10) : na
+v_11 = on11 ? (showAbsolute ? pct11 : showDelta ? rsLine11 - avgRs : rsLine11) : na
+v_12 = on12 ? (showAbsolute ? pct12 : showDelta ? rsLine12 - avgRs : rsLine12) : na
+v_13 = on13 ? (showAbsolute ? pct13 : showDelta ? rsLine13 - avgRs : rsLine13) : na
+v_14 = on14 ? (showAbsolute ? pct14 : showDelta ? rsLine14 - avgRs : rsLine14) : na
+v_15 = on15 ? (showAbsolute ? pct15 : showDelta ? rsLine15 - avgRs : rsLine15) : na
+v_16 = on16 ? (showAbsolute ? pct16 : showDelta ? rsLine16 - avgRs : rsLine16) : na
+v_17 = on17 ? (showAbsolute ? pct17 : showDelta ? rsLine17 - avgRs : rsLine17) : na
+v_18 = on18 ? (showAbsolute ? pct18 : showDelta ? rsLine18 - avgRs : rsLine18) : na
+v_19 = on19 ? (showAbsolute ? pct19 : showDelta ? rsLine19 - avgRs : rsLine19) : na
+v_20 = on20 ? (showAbsolute ? pct20 : showDelta ? rsLine20 - avgRs : rsLine20) : na
+
+c_1 = color.red
+c_2 = color.orange
+c_3 = color.yellow
+c_4 = color.lime
+c_5 = color.aqua
+c_6 = color.fuchsia
+c_7 = color.silver
+c_8 = color.maroon
+c_9 = color.olive
+c_10 = color.green
+c_11 = color.teal
+c_12 = color.blue
+c_13 = color.navy
+c_14 = color.purple
+c_15 = color.gray
+c_16 = #e91e63
+c_17 = #00bcd4
+c_18 = #8bc34a
+c_19 = #ff9800
+c_20 = #9c27b0
+
+
+// Determine the active highlight slot dynamically
+int activeHighlightSlot = 0
+if hlTarget > 0 and hlTarget <= nSym
+    if hlMode == 'By Slot/Color (Trace specific stock)'
+        activeHighlightSlot := hlTarget
+    else // By Rank
+        // We need to sort the values for the current bar to find which slot is at the desired rank
+        float[] currentVals = array.new_float()
+        int[] originalSlots = array.new_int()
+
+        if on1
+            array.push(currentVals, rankBy == '%Change' ? pct1 : rs0_1), array.push(originalSlots, 1)
+        if on2
+            array.push(currentVals, rankBy == '%Change' ? pct2 : rs0_2), array.push(originalSlots, 2)
+        if on3
+            array.push(currentVals, rankBy == '%Change' ? pct3 : rs0_3), array.push(originalSlots, 3)
+        if on4
+            array.push(currentVals, rankBy == '%Change' ? pct4 : rs0_4), array.push(originalSlots, 4)
+        if on5
+            array.push(currentVals, rankBy == '%Change' ? pct5 : rs0_5), array.push(originalSlots, 5)
+        if on6
+            array.push(currentVals, rankBy == '%Change' ? pct6 : rs0_6), array.push(originalSlots, 6)
+        if on7
+            array.push(currentVals, rankBy == '%Change' ? pct7 : rs0_7), array.push(originalSlots, 7)
+        if on8
+            array.push(currentVals, rankBy == '%Change' ? pct8 : rs0_8), array.push(originalSlots, 8)
+        if on9
+            array.push(currentVals, rankBy == '%Change' ? pct9 : rs0_9), array.push(originalSlots, 9)
+        if on10
+            array.push(currentVals, rankBy == '%Change' ? pct10 : rs0_10), array.push(originalSlots, 10)
+        if on11
+            array.push(currentVals, rankBy == '%Change' ? pct11 : rs0_11), array.push(originalSlots, 11)
+        if on12
+            array.push(currentVals, rankBy == '%Change' ? pct12 : rs0_12), array.push(originalSlots, 12)
+        if on13
+            array.push(currentVals, rankBy == '%Change' ? pct13 : rs0_13), array.push(originalSlots, 13)
+        if on14
+            array.push(currentVals, rankBy == '%Change' ? pct14 : rs0_14), array.push(originalSlots, 14)
+        if on15
+            array.push(currentVals, rankBy == '%Change' ? pct15 : rs0_15), array.push(originalSlots, 15)
+        if on16
+            array.push(currentVals, rankBy == '%Change' ? pct16 : rs0_16), array.push(originalSlots, 16)
+        if on17
+            array.push(currentVals, rankBy == '%Change' ? pct17 : rs0_17), array.push(originalSlots, 17)
+        if on18
+            array.push(currentVals, rankBy == '%Change' ? pct18 : rs0_18), array.push(originalSlots, 18)
+        if on19
+            array.push(currentVals, rankBy == '%Change' ? pct19 : rs0_19), array.push(originalSlots, 19)
+        if on20
+            array.push(currentVals, rankBy == '%Change' ? pct20 : rs0_20), array.push(originalSlots, 20)
+
+        int s_n = array.size(currentVals)
+        if s_n > 0
+            for i = 0 to s_n - 1
+                for j = 0 to s_n - 1 - i
+                    if j + 1 < s_n
+                        if nz(array.get(currentVals, j)) < nz(array.get(currentVals, j + 1))
+                            float temp_v = array.get(currentVals, j)
+                            array.set(currentVals, j, array.get(currentVals, j + 1))
+                            array.set(currentVals, j + 1, temp_v)
+
+                            int temp_s = array.get(originalSlots, j)
+                            array.set(originalSlots, j, array.get(originalSlots, j + 1))
+                            array.set(originalSlots, j + 1, temp_s)
+
+        if hlTarget <= s_n
+            activeHighlightSlot := array.get(originalSlots, hlTarget - 1)
+
+
+// Determine line opacities based on highlighting
+float trNormal = hlTarget > 0 ? 85.0 : 0.0
+bool hlOn1 = activeHighlightSlot == 1, bool hlOn2 = activeHighlightSlot == 2, bool hlOn3 = activeHighlightSlot == 3, bool hlOn4 = activeHighlightSlot == 4
+bool hlOn5 = activeHighlightSlot == 5, bool hlOn6 = activeHighlightSlot == 6, bool hlOn7 = activeHighlightSlot == 7, bool hlOn8 = activeHighlightSlot == 8
+bool hlOn9 = activeHighlightSlot == 9, bool hlOn10 = activeHighlightSlot == 10, bool hlOn11 = activeHighlightSlot == 11, bool hlOn12 = activeHighlightSlot == 12
+bool hlOn13 = activeHighlightSlot == 13, bool hlOn14 = activeHighlightSlot == 14, bool hlOn15 = activeHighlightSlot == 15, bool hlOn16 = activeHighlightSlot == 16
+bool hlOn17 = activeHighlightSlot == 17, bool hlOn18 = activeHighlightSlot == 18, bool hlOn19 = activeHighlightSlot == 19, bool hlOn20 = activeHighlightSlot == 20
+
+hline(0, 'Zero', color=color.new(color.gray, 30))
+plot(showPlots and showBenchmark and inRange ? 0.0 : na, title='Benchmark', color=color.white, linewidth=1)
+
+// Background lines (faded if highlighted)
+plot(showPlots and inRange and on1 ? v_1 : na, title='S01', color=color.new(c_1, hlOn1 ? 100 : trNormal), linewidth=2)
+plot(showPlots and inRange and on2 ? v_2 : na, title='S02', color=color.new(c_2, hlOn2 ? 100 : trNormal), linewidth=2)
+plot(showPlots and inRange and on3 ? v_3 : na, title='S03', color=color.new(c_3, hlOn3 ? 100 : trNormal), linewidth=2)
+plot(showPlots and inRange and on4 ? v_4 : na, title='S04', color=color.new(c_4, hlOn4 ? 100 : trNormal), linewidth=2)
+plot(showPlots and inRange and on5 ? v_5 : na, title='S05', color=color.new(c_5, hlOn5 ? 100 : trNormal), linewidth=2)
+plot(showPlots and inRange and on6 ? v_6 : na, title='S06', color=color.new(c_6, hlOn6 ? 100 : trNormal), linewidth=2)
+plot(showPlots and inRange and on7 ? v_7 : na, title='S07', color=color.new(c_7, hlOn7 ? 100 : trNormal), linewidth=2)
+plot(showPlots and inRange and on8 ? v_8 : na, title='S08', color=color.new(c_8, hlOn8 ? 100 : trNormal), linewidth=2)
+plot(showPlots and inRange and on9 ? v_9 : na, title='S09', color=color.new(c_9, hlOn9 ? 100 : trNormal), linewidth=2)
+plot(showPlots and inRange and on10 ? v_10 : na, title='S10', color=color.new(c_10, hlOn10 ? 100 : trNormal), linewidth=2)
+plot(showPlots and inRange and on11 ? v_11 : na, title='S11', color=color.new(c_11, hlOn11 ? 100 : trNormal), linewidth=2)
+plot(showPlots and inRange and on12 ? v_12 : na, title='S12', color=color.new(c_12, hlOn12 ? 100 : trNormal), linewidth=2)
+plot(showPlots and inRange and on13 ? v_13 : na, title='S13', color=color.new(c_13, hlOn13 ? 100 : trNormal), linewidth=2)
+plot(showPlots and inRange and on14 ? v_14 : na, title='S14', color=color.new(c_14, hlOn14 ? 100 : trNormal), linewidth=2)
+plot(showPlots and inRange and on15 ? v_15 : na, title='S15', color=color.new(c_15, hlOn15 ? 100 : trNormal), linewidth=2)
+plot(showPlots and inRange and on16 ? v_16 : na, title='S16', color=color.new(c_16, hlOn16 ? 100 : trNormal), linewidth=2)
+plot(showPlots and inRange and on17 ? v_17 : na, title='S17', color=color.new(c_17, hlOn17 ? 100 : trNormal), linewidth=2)
+plot(showPlots and inRange and on18 ? v_18 : na, title='S18', color=color.new(c_18, hlOn18 ? 100 : trNormal), linewidth=2)
+plot(showPlots and inRange and on19 ? v_19 : na, title='S19', color=color.new(c_19, hlOn19 ? 100 : trNormal), linewidth=2)
+plot(showPlots and inRange and on20 ? v_20 : na, title='S20', color=color.new(c_20, hlOn20 ? 100 : trNormal), linewidth=2)
+
+// Highlighted active line
+float hlVal = na
+color hlCol = na
+if hlOn1
+    hlVal := v_1, hlCol := c_1
+else if hlOn2
+    hlVal := v_2, hlCol := c_2
+else if hlOn3
+    hlVal := v_3, hlCol := c_3
+else if hlOn4
+    hlVal := v_4, hlCol := c_4
+else if hlOn5
+    hlVal := v_5, hlCol := c_5
+else if hlOn6
+    hlVal := v_6, hlCol := c_6
+else if hlOn7
+    hlVal := v_7, hlCol := c_7
+else if hlOn8
+    hlVal := v_8, hlCol := c_8
+else if hlOn9
+    hlVal := v_9, hlCol := c_9
+else if hlOn10
+    hlVal := v_10, hlCol := c_10
+else if hlOn11
+    hlVal := v_11, hlCol := c_11
+else if hlOn12
+    hlVal := v_12, hlCol := c_12
+else if hlOn13
+    hlVal := v_13, hlCol := c_13
+else if hlOn14
+    hlVal := v_14, hlCol := c_14
+else if hlOn15
+    hlVal := v_15, hlCol := c_15
+else if hlOn16
+    hlVal := v_16, hlCol := c_16
+else if hlOn17
+    hlVal := v_17, hlCol := c_17
+else if hlOn18
+    hlVal := v_18, hlCol := c_18
+else if hlOn19
+    hlVal := v_19, hlCol := c_19
+else if hlOn20
+    hlVal := v_20, hlCol := c_20
+
+plot(showPlots and inRange and hlTarget > 0 ? hlVal : na, title='Highlighted Line', color=color.new(hlCol, 0), linewidth=4)
+
+
+txtSize = tblSize == 'Tiny' ? size.tiny : tblSize == 'Normal' ? size.normal : size.small
+pos = tblPos == 'Top Left' ? position.top_left : tblPos == 'Bottom Right' ? position.bottom_right : tblPos == 'Middle Right' ? position.middle_right : position.top_right
+
+fstr(float v) =>
+    na(v) ? '-' : str.tostring(v, '#0.00')
+
+wstr(float v) =>
+    na(v) ? '-' : str.tostring(v, '#0.00') + '%'
+
+textOn(color bg) =>
+    float lum = na(bg) ? 0.0 : 0.299 * color.r(bg) + 0.587 * color.g(bg) + 0.114 * color.b(bg)
+    lum > 140 ? color.black : color.white
+
+rsShade(float v, float o1, float o2) =>
+    color res = colBlank
+    if not na(v)
+        int gt = 0
+        if not na(o1) and o1 > v
+            gt += 1
+        if not na(o2) and o2 > v
+            gt += 1
+        res := gt == 0 ? colRsHi : gt == 1 ? colRsMid : colRsLo
+    res
+
+var table tbl = table.new(pos, 7, 22, bgcolor=color.new(#111111, 10), border_width=1, border_color=color.new(color.gray, 50), frame_color=color.new(color.gray, 40), frame_width=1)
+var table foot = table.new(position.bottom_center, 1, 1, bgcolor=color.new(#111111, 20))
+
+if barstate.islast and showTable
+    table.clear(tbl, 0, 0, 6, 21)
+    hdr = color.new(#222222, 0)
+    table.cell(tbl, 0, 0, 'Rank', text_color=color.white, bgcolor=hdr, text_size=txtSize)
+    table.cell(tbl, 1, 0, 'Stock/Sector', text_color=color.white, bgcolor=hdr, text_size=txtSize)
+    table.cell(tbl, 2, 0, 'Weightage', text_color=color.white, bgcolor=hdr, text_size=txtSize)
+    table.cell(tbl, 3, 0, 'RS-0', text_color=color.white, bgcolor=hdr, text_size=txtSize)
+    table.cell(tbl, 4, 0, 'RS-1', text_color=color.white, bgcolor=hdr, text_size=txtSize)
+    table.cell(tbl, 5, 0, 'RS-2', text_color=color.white, bgcolor=hdr, text_size=txtSize)
+    table.cell(tbl, 6, 0, weekPctMode ? '%Chg W' : '%Chg M', text_color=color.white, bgcolor=hdr, text_size=txtSize)
+
+    string[] aId = array.new_string()
+    string[] aNm = array.new_string()
+    int[] aS = array.new_int()
+    float[] aW = array.new_float()
+    float[] a0 = array.new_float()
+    float[] a1 = array.new_float()
+    float[] a2 = array.new_float()
+    float[] aP = array.new_float()
+    color[] aC = array.new_color()
+    float[] aLine = array.new_float()
+
+    if on1
+        array.push(aId, id1), array.push(aNm, nm1), array.push(aS, 1), array.push(aW, array.get(wts, 0))
+        array.push(a0, rs0_1), array.push(a1, rs1_1), array.push(a2, rs2_1), array.push(aP, pct1)
+        array.push(aC, c_1), array.push(aLine, v_1)
+    if on2
+        array.push(aId, id2), array.push(aNm, nm2), array.push(aS, 2), array.push(aW, array.get(wts, 1))
+        array.push(a0, rs0_2), array.push(a1, rs1_2), array.push(a2, rs2_2), array.push(aP, pct2)
+        array.push(aC, c_2), array.push(aLine, v_2)
+    if on3
+        array.push(aId, id3), array.push(aNm, nm3), array.push(aS, 3), array.push(aW, array.get(wts, 2))
+        array.push(a0, rs0_3), array.push(a1, rs1_3), array.push(a2, rs2_3), array.push(aP, pct3)
+        array.push(aC, c_3), array.push(aLine, v_3)
+    if on4
+        array.push(aId, id4), array.push(aNm, nm4), array.push(aS, 4), array.push(aW, array.get(wts, 3))
+        array.push(a0, rs0_4), array.push(a1, rs1_4), array.push(a2, rs2_4), array.push(aP, pct4)
+        array.push(aC, c_4), array.push(aLine, v_4)
+    if on5
+        array.push(aId, id5), array.push(aNm, nm5), array.push(aS, 5), array.push(aW, array.get(wts, 4))
+        array.push(a0, rs0_5), array.push(a1, rs1_5), array.push(a2, rs2_5), array.push(aP, pct5)
+        array.push(aC, c_5), array.push(aLine, v_5)
+    if on6
+        array.push(aId, id6), array.push(aNm, nm6), array.push(aS, 6), array.push(aW, array.get(wts, 5))
+        array.push(a0, rs0_6), array.push(a1, rs1_6), array.push(a2, rs2_6), array.push(aP, pct6)
+        array.push(aC, c_6), array.push(aLine, v_6)
+    if on7
+        array.push(aId, id7), array.push(aNm, nm7), array.push(aS, 7), array.push(aW, array.get(wts, 6))
+        array.push(a0, rs0_7), array.push(a1, rs1_7), array.push(a2, rs2_7), array.push(aP, pct7)
+        array.push(aC, c_7), array.push(aLine, v_7)
+    if on8
+        array.push(aId, id8), array.push(aNm, nm8), array.push(aS, 8), array.push(aW, array.get(wts, 7))
+        array.push(a0, rs0_8), array.push(a1, rs1_8), array.push(a2, rs2_8), array.push(aP, pct8)
+        array.push(aC, c_8), array.push(aLine, v_8)
+    if on9
+        array.push(aId, id9), array.push(aNm, nm9), array.push(aS, 9), array.push(aW, array.get(wts, 8))
+        array.push(a0, rs0_9), array.push(a1, rs1_9), array.push(a2, rs2_9), array.push(aP, pct9)
+        array.push(aC, c_9), array.push(aLine, v_9)
+    if on10
+        array.push(aId, id10), array.push(aNm, nm10), array.push(aS, 10), array.push(aW, array.get(wts, 9))
+        array.push(a0, rs0_10), array.push(a1, rs1_10), array.push(a2, rs2_10), array.push(aP, pct10)
+        array.push(aC, c_10), array.push(aLine, v_10)
+    if on11
+        array.push(aId, id11), array.push(aNm, nm11), array.push(aS, 11), array.push(aW, array.get(wts, 10))
+        array.push(a0, rs0_11), array.push(a1, rs1_11), array.push(a2, rs2_11), array.push(aP, pct11)
+        array.push(aC, c_11), array.push(aLine, v_11)
+    if on12
+        array.push(aId, id12), array.push(aNm, nm12), array.push(aS, 12), array.push(aW, array.get(wts, 11))
+        array.push(a0, rs0_12), array.push(a1, rs1_12), array.push(a2, rs2_12), array.push(aP, pct12)
+        array.push(aC, c_12), array.push(aLine, v_12)
+    if on13
+        array.push(aId, id13), array.push(aNm, nm13), array.push(aS, 13), array.push(aW, array.get(wts, 12))
+        array.push(a0, rs0_13), array.push(a1, rs1_13), array.push(a2, rs2_13), array.push(aP, pct13)
+        array.push(aC, c_13), array.push(aLine, v_13)
+    if on14
+        array.push(aId, id14), array.push(aNm, nm14), array.push(aS, 14), array.push(aW, array.get(wts, 13))
+        array.push(a0, rs0_14), array.push(a1, rs1_14), array.push(a2, rs2_14), array.push(aP, pct14)
+        array.push(aC, c_14), array.push(aLine, v_14)
+    if on15
+        array.push(aId, id15), array.push(aNm, nm15), array.push(aS, 15), array.push(aW, array.get(wts, 14))
+        array.push(a0, rs0_15), array.push(a1, rs1_15), array.push(a2, rs2_15), array.push(aP, pct15)
+        array.push(aC, c_15), array.push(aLine, v_15)
+    if on16
+        array.push(aId, id16), array.push(aNm, nm16), array.push(aS, 16), array.push(aW, array.get(wts, 15))
+        array.push(a0, rs0_16), array.push(a1, rs1_16), array.push(a2, rs2_16), array.push(aP, pct16)
+        array.push(aC, c_16), array.push(aLine, v_16)
+    if on17
+        array.push(aId, id17), array.push(aNm, nm17), array.push(aS, 17), array.push(aW, array.get(wts, 16))
+        array.push(a0, rs0_17), array.push(a1, rs1_17), array.push(a2, rs2_17), array.push(aP, pct17)
+        array.push(aC, c_17), array.push(aLine, v_17)
+    if on18
+        array.push(aId, id18), array.push(aNm, nm18), array.push(aS, 18), array.push(aW, array.get(wts, 17))
+        array.push(a0, rs0_18), array.push(a1, rs1_18), array.push(a2, rs2_18), array.push(aP, pct18)
+        array.push(aC, c_18), array.push(aLine, v_18)
+    if on19
+        array.push(aId, id19), array.push(aNm, nm19), array.push(aS, 19), array.push(aW, array.get(wts, 18))
+        array.push(a0, rs0_19), array.push(a1, rs1_19), array.push(a2, rs2_19), array.push(aP, pct19)
+        array.push(aC, c_19), array.push(aLine, v_19)
+    if on20
+        array.push(aId, id20), array.push(aNm, nm20), array.push(aS, 20), array.push(aW, array.get(wts, 19))
+        array.push(a0, rs0_20), array.push(a1, rs1_20), array.push(a2, rs2_20), array.push(aP, pct20)
+        array.push(aC, c_20), array.push(aLine, v_20)
+
+    int n = array.size(aNm)
+    if n > 1
+        for a = 0 to n - 2
+            for b = 0 to n - 2 - a
+                float left = rankBy == '%Change' ? array.get(aP, b) : array.get(a0, b)
+                float right = rankBy == '%Change' ? array.get(aP, b + 1) : array.get(a0, b + 1)
+                if nz(left) < nz(right)
+                    swapStr(aId, b, b + 1)
+                    swapStr(aNm, b, b + 1)
+                    swapInt(aS, b, b + 1)
+                    swapFlt(aW, b, b + 1)
+                    swapFlt(a0, b, b + 1)
+                    swapFlt(a1, b, b + 1)
+                    swapFlt(a2, b, b + 1)
+                    swapFlt(aP, b, b + 1)
+                    swapClr(aC, b, b + 1)
+                    swapFlt(aLine, b, b + 1)
+
+    chartT = normTicker(syminfo.tickerid)
+    float s0 = 0.0
+    float s1 = 0.0
+    float s2 = 0.0
+    int ok0 = 0
+    int ok1 = 0
+    int ok2 = 0
+    for i = 0 to n - 1
+        row = i + 1
+        nm = array.get(aNm, i)
+        idv = array.get(aId, i)
+        slotNum = array.get(aS, i)
+        isMe = normTicker(idv) == chartT or nm == chartT
+        isHl = slotNum == activeHighlightSlot
+        slotCol = array.get(aC, i)
+        v0 = array.get(a0, i)
+        v1 = array.get(a1, i)
+        v2 = array.get(a2, i)
+        vp = array.get(aP, i)
+        vw = array.get(aW, i)
+        if not na(v0)
+            s0 += v0
+            ok0 += 1
+        if not na(v1)
+            s1 += v1
+            ok1 += 1
+        if not na(v2)
+            s2 += v2
+            ok2 += 1
+        bg0 = rsShade(v0, v1, v2)
+        bg1 = rsShade(v1, v0, v2)
+        bg2 = rsShade(v2, v0, v1)
+        bgP = na(vp) ? colBlank : vp >= 0 ? colUp : colDown
+        bgR = color.from_gradient(row, 1, math.max(n, 2), colRankTop, colRankBot)
+
+        string prefix = ''
+        if isHl
+            prefix := '⭐ '
+        else if isMe
+            prefix := '▶ '
+
+        table.cell(tbl, 0, row, (row < 10 ? '0' : '') + str.tostring(row), text_color=textOn(bgR), bgcolor=bgR, text_size=txtSize)
+        table.cell(tbl, 1, row, prefix + nm, text_color=textOn(slotCol), bgcolor=slotCol, text_size=txtSize)
+        table.cell(tbl, 2, row, wstr(vw), text_color=color.white, bgcolor=color.new(#1a1a1a, 0), text_size=txtSize)
+        table.cell(tbl, 3, row, fstr(v0), text_color=textOn(bg0), bgcolor=bg0, text_size=txtSize)
+        table.cell(tbl, 4, row, fstr(v1), text_color=textOn(bg1), bgcolor=bg1, text_size=txtSize)
+        table.cell(tbl, 5, row, fstr(v2), text_color=textOn(bg2), bgcolor=bg2, text_size=txtSize)
+        table.cell(tbl, 6, row, fstr(vp), text_color=textOn(bgP), bgcolor=bgP, text_size=txtSize)
+
+    avgRow = n + 1
+    abg = color.new(#1b3d2f, 0)
+    avg0 = ok0 > 0 ? s0 / ok0 : na
+    avg1 = ok1 > 0 ? s1 / ok1 : na
+    avg2 = ok2 > 0 ? s2 / ok2 : na
+    abg0 = rsShade(avg0, avg1, avg2)
+    abg1 = rsShade(avg1, avg0, avg2)
+    abg2 = rsShade(avg2, avg0, avg1)
+    table.cell(tbl, 0, avgRow, '---', text_color=color.white, bgcolor=abg, text_size=txtSize)
+    table.cell(tbl, 1, avgRow, 'Average', text_color=color.white, bgcolor=abg, text_size=txtSize)
+    table.cell(tbl, 2, avgRow, '---', text_color=color.white, bgcolor=abg, text_size=txtSize)
+    table.cell(tbl, 3, avgRow, fstr(avg0), text_color=textOn(abg0), bgcolor=abg0, text_size=txtSize)
+    table.cell(tbl, 4, avgRow, fstr(avg1), text_color=textOn(abg1), bgcolor=abg1, text_size=txtSize)
+    table.cell(tbl, 5, avgRow, fstr(avg2), text_color=textOn(abg2), bgcolor=abg2, text_size=txtSize)
+    table.cell(tbl, 6, avgRow, '---', text_color=color.white, bgcolor=abg, text_size=txtSize)
+
+    string titleBench = defaultBType == 'Auto Sector' ? finalBenchTicker : customBench
+    table.cell(foot, 0, 0, 'Benchmark = ' + titleBench, text_color=color.white, text_size=txtSize)
